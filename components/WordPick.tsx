@@ -6,7 +6,7 @@ import { Card, CardBody } from './ui/Card';
 import { Timer } from './Timer';
 import type { Player, Room } from '@/lib/types';
 import { TIMING } from '@/lib/constants';
-import { refetchRoomSnapshot } from '@/lib/use-room';
+import { broadcastStateRefresh, refetchRoomSnapshot } from '@/lib/use-room';
 
 export function WordPick({
   room,
@@ -35,6 +35,10 @@ export function WordPick({
       if (res.ok) {
         // Don't wait for Realtime CDC — pull the new 'drawing' state now.
         await refetchRoomSnapshot(room.code, meId);
+        // Tell every other player to refetch too. Without this they wait
+        // on postgres_changes for the rooms row, which is sometimes laggy
+        // or dropped — leaving non-drawer clients stranded on word-pick.
+        broadcastStateRefresh(room.code);
       } else {
         setPickedIdx(null);
       }

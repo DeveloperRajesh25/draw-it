@@ -320,6 +320,22 @@ export function useRoom(code: string, playerId: string) {
       }).catch(() => {/* ignore */});
     }, TIMING.HEARTBEAT_INTERVAL_MS);
 
+    // Phase watchdog: belt-and-suspenders against a missed STATE_REFRESH
+    // broadcast AND a dropped postgres_changes event. If our local copy of
+    // the room is more than 3s past its phase deadline, the server has
+    // almost certainly already advanced — pull a fresh snapshot. This
+    // catches the "stuck on word-pick / drawing / round-end" failure mode
+    // on flaky Realtime links. refetchRoomSnapshot is rate-limited so this
+    // is cheap even in the steady-state miss case.
+    const watchdog = setInterval(() => {
+      if (cancelledRef.current) return;
+      const cur = useRoomStore.getState().state;
+      const endsAt = cur?.room?.phaseEndsAt;
+      if (!endsAt) return;
+      if (new Date(endsAt).getTime() + 3000 > Date.now()) return;
+      void refetchRoomSnapshot(code, playerId);
+    }, 5000);
+
     // Visibility re-sync (the persistence trick)
     const onVisible = async () => {
       if (document.visibilityState === 'visible') {
@@ -359,6 +375,7 @@ export function useRoom(code: string, playerId: string) {
     return () => {
       cancelledRef.current = true;
       clearInterval(heartbeat);
+      clearInterval(watchdog);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('pagehide', onUnload);
       window.removeEventListener('beforeunload', onUnload);

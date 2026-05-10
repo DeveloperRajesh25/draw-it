@@ -12,7 +12,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { isValidRoomCode } from '@/lib/room-code';
 import { getOrCreatePlayer, getSession, setSession } from '@/lib/identity';
 import { useRoomStore } from '@/lib/store';
-import { refetchRoomSnapshot, useRoom } from '@/lib/use-room';
+import { broadcastStateRefresh, refetchRoomSnapshot, useRoom } from '@/lib/use-room';
 import { sfx } from '@/lib/sound';
 
 type Phase = 'boot' | 'rejoining' | 'joining' | 'in-room' | 'missing';
@@ -166,6 +166,12 @@ function RoomShell({
         // Server may have advanced the phase. Pull the new snapshot now —
         // don't wait for Postgres CDC + Realtime fanout (~hundreds of ms).
         await refetchRoomSnapshot(code, playerId);
+        // Tell every other peer to refetch as well. The whole room shares
+        // one phase clock; if our timer expired theirs has too, but only
+        // one client wins the tick race. Without this fan-out the losers
+        // would wait on postgres_changes for the rooms row to advance,
+        // which is regularly delayed or dropped on flaky Realtime links.
+        broadcastStateRefresh(code);
       })
       .catch(() => {/* ignore */})
       .finally(() => {
