@@ -10,7 +10,7 @@ import { RoomPill } from './RoomPill';
 import type { Player, Room, RoomSettings, WordMode } from '@/lib/types';
 import { SETTINGS_LIMITS } from '@/lib/constants';
 import { leaveRoom } from '@/lib/leave';
-import { refetchRoomSnapshot } from '@/lib/use-room';
+import { broadcastStateRefresh, refetchRoomSnapshot } from '@/lib/use-room';
 
 type Props = {
   room: Room;
@@ -48,6 +48,13 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
       // immediately so we don't wait on Realtime CDC. Keep busy=true — this
       // component will unmount when phase changes.
       await refetchRoomSnapshot(room.code, meId);
+      // Push the same wake-up to every other client. Without this, peers
+      // depend on the rooms postgres_changes event arriving — which can lag
+      // or drop on flaky connections — and stay stuck in the lobby until
+      // they refresh. The broadcast goes peer-to-peer over the WebSocket.
+      // (Game-start sound is played by RoomClient on phase transition, so
+      // both host and peers hear it.)
+      broadcastStateRefresh(room.code);
     } catch {
       setError('Could not start');
       setBusy(false);
@@ -66,6 +73,7 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
       setLeaving(false);
       return;
     }
+    broadcastStateRefresh(room.code);
     router.push('/');
   };
 
@@ -78,6 +86,7 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: meId, targetId: id }),
       });
+      broadcastStateRefresh(room.code);
     } finally {
       setKickingId(null);
     }
@@ -191,6 +200,7 @@ function SettingsView({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: meId, settings: patch }),
       });
+      broadcastStateRefresh(roomCode);
     } finally {
       setBusy(false);
     }

@@ -152,14 +152,24 @@
 
   /* Caps the canvas so the game screen fits within 100dvh on mobile and
      shrinks proportionally when the on-screen keyboard opens. The width is
-     capped to whatever width gives a 4:3 canvas at <= 38dvh tall. On lg+
-     viewports the canvas fills its grid column normally. */
+     capped to whatever width gives a 4:3 canvas at the available height; the
+     room shell binds its height to visualViewport on mobile, so this stays
+     valid when the keyboard is open. On lg+ the canvas fills its grid column
+     normally. */
   .canvas-mobile-fit {
-    max-width: min(100%, calc(38dvh * 4 / 3));
+    max-width: min(100%, calc(34dvh * 4 / 3));
   }
   @media (min-width: 1024px) {
     .canvas-mobile-fit {
       max-width: none;
     }
+  }
+  /* Block iOS body-scroll while the chat input is focused — without this
+     iOS will translate the whole page up by the keyboard height, leaving
+     the top of the room peeking above the URL bar. */
+  body.kbd-open {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
   }
 }

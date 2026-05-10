@@ -94,14 +94,14 @@ export async function POST(
           }),
         ]);
 
-        // Side-effects that don't affect the response: don't await.
-        // The sender's client will broadcast the verdict via Realtime, so
-        // these can run after we return without delaying anyone.
         void sb
           .from('rooms')
           .update({ last_activity_at: new Date().toISOString() })
           .eq('code', code);
-        void maybeEndDrawingEarly(sb, code);
+        // Do this synchronously so the sender's broadcastStateRefresh (fired
+        // when they receive our response) tells peers to fetch a snapshot
+        // that already shows the round-end transition.
+        await maybeEndDrawingEarly(sb, code);
 
         return NextResponse.json({
           ok: true,

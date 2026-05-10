@@ -30,6 +30,11 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: '#f7f1e3',
+  // `interactive-widget=resizes-content` makes Chrome shrink the layout viewport
+  // when the on-screen keyboard opens, so `dvh` units inside the room view
+  // collapse around the keyboard. Without this the input slides under the
+  // keyboard on mobile.
+  interactiveWidget: 'resizes-content',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

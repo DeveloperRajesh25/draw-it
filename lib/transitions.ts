@@ -499,7 +499,9 @@ export async function tryRevealNextHint(
 
 /**
  * After a correct guess, check if every non-drawer guesser has guessed.
- * If so, set phase_ends_at = NOW() so the next tick triggers round-end early.
+ * If so, transition straight to round-end with reason 'all-guessed' — don't
+ * just nudge the timer, because that would surface as a "Time's up!"
+ * message and require an extra tick round-trip.
  */
 export async function maybeEndDrawingEarly(
   sb: SupabaseClient,
@@ -514,11 +516,9 @@ export async function maybeEndDrawingEarly(
   if (guessers.length === 0) return;
   const allGuessed = guessers.every((p) => p.hasGuessed);
   if (!allGuessed) return;
-  await sb
-    .from('rooms')
-    .update({ phase_ends_at: nowISO() })
-    .eq('code', roomCode)
-    .eq('phase', 'drawing');
+  // Optimistic-locked transition: if a tick beat us to it, our update is a
+  // no-op and the existing transition wins.
+  await transitionDrawingToRoundEnd(sb, room, 'all-guessed');
 }
 
 /**

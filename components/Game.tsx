@@ -16,6 +16,33 @@ import { sfx } from '@/lib/sound';
 import type { ChatMessage, HintReveal, Player, Room, Stroke, Tool } from '@/lib/types';
 import { COLORS, BRUSH_SIZES } from '@/lib/constants';
 
+/**
+ * Tracks the visualViewport height on mobile. When the on-screen keyboard
+ * opens, visualViewport.height shrinks while window.innerHeight does not —
+ * so binding the room shell to this value (instead of dvh alone) keeps the
+ * chat input glued just above the keyboard on every mobile browser.
+ */
+function useViewportHeight(): number | null {
+  const [h, setH] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const vv = window.visualViewport;
+    const read = () => setH(vv ? vv.height : window.innerHeight);
+    read();
+    if (vv) {
+      vv.addEventListener('resize', read);
+      vv.addEventListener('scroll', read);
+      return () => {
+        vv.removeEventListener('resize', read);
+        vv.removeEventListener('scroll', read);
+      };
+    }
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  }, []);
+  return h;
+}
+
 type Props = {
   room: Room;
   players: Player[];
@@ -53,17 +80,36 @@ export function Game({
   // Sound: ding on each NEW correct-guess message that arrives.
   const seenCorrectIdsRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
+    const isFirstSeed = seenCorrectIdsRef.current.size === 0;
     let didAnyNew = false;
-    let firstSeed = seenCorrectIdsRef.current.size === 0;
     for (const m of chat) {
       if (m.type !== 'correct-guess') continue;
       if (seenCorrectIdsRef.current.has(m.id)) continue;
       seenCorrectIdsRef.current.add(m.id);
-      if (!firstSeed) didAnyNew = true;
+      if (!isFirstSeed) didAnyNew = true;
     }
     if (didAnyNew) sfx.correctGuess();
-    firstSeed = false;
   }, [chat]);
+
+  // Sound: blip when a player count drops (someone left). We compare against
+  // the previous render's player ids and play once per disappearance, but
+  // skip the very first render (otherwise rejoiners would hear it for ghosts).
+  const seenPlayerIdsRef = React.useRef<Set<string> | null>(null);
+  React.useEffect(() => {
+    const next = new Set(players.map((p) => p.id));
+    const prev = seenPlayerIdsRef.current;
+    if (prev) {
+      for (const id of prev) {
+        if (!next.has(id)) {
+          sfx.playerLeave();
+          break;
+        }
+      }
+    }
+    seenPlayerIdsRef.current = next;
+  }, [players]);
+
+  const viewportHeight = useViewportHeight();
 
   React.useEffect(() => {
     if (room.phase !== 'drawing') return;
@@ -128,10 +174,27 @@ export function Game({
     router.push('/');
   };
 
+  // On mobile we bind the shell height to the visual viewport, so the chat
+  // input is always glued to the top edge of the keyboard. On lg+ we revert
+  // to dvh so the layout doesn't twitch when desktop text-IME panels open.
+  const [isLg, setIsLg] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const apply = () => setIsLg(mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+  const shellStyle: React.CSSProperties =
+    viewportHeight && !isLg ? { height: `${viewportHeight}px` } : {};
+
   return (
-    <main className="mx-auto flex h-dvh w-full max-w-6xl flex-col overflow-hidden px-2 pt-2 pb-2 sm:px-5 sm:pt-3 sm:pb-3">
+    <main
+      className="mx-auto flex w-full max-w-6xl flex-col overflow-hidden px-2 pt-1.5 pb-1.5 sm:h-dvh sm:px-5 sm:pt-3 sm:pb-3"
+      style={shellStyle}
+    >
       {/* Top bar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm sm:gap-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-1.5 shadow-doodle-sm sm:p-2 sm:gap-3">
         <RoomPill code={room.code} className="shrink-0" />
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-xs text-ink-soft sm:inline">
@@ -169,8 +232,8 @@ export function Game({
         </div>
       </div>
 
-      {/* Mobile players strip — horizontal scroll, compact */}
-      <div className="mt-2 shrink-0 lg:hidden">
+      {/* Mobile players strip — horizontal scroll, ultra-compact */}
+      <div className="mt-1.5 shrink-0 lg:hidden">
         <PlayerList
           players={players}
           drawerId={room.drawerId}
@@ -182,7 +245,7 @@ export function Game({
       </div>
 
       {/* Body — mobile: flex column with chat taking remaining height; lg: 3-col grid */}
-      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 sm:mt-3 sm:gap-3 lg:grid lg:grid-cols-[220px_1fr_300px]">
+      <div className="mt-1.5 flex min-h-0 flex-1 flex-col gap-1.5 sm:mt-3 sm:gap-3 lg:grid lg:grid-cols-[220px_1fr_300px]">
         {/* Players (desktop only) */}
         <div className="hidden lg:order-1 lg:block lg:overflow-y-auto">
           <div className="lg:sticky lg:top-0">

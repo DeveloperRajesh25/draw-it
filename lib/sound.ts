@@ -41,12 +41,34 @@ export const sfx = {
     tone(660, 90, 0.07, 'triangle');
     setTimeout(() => tone(880, 140, 0.07, 'triangle'), 90);
   },
-  wordPick: () => tone(520, 110, 0.05, 'triangle'),
+  // New round / word-pick start: ascending two-note chime
+  wordPick: () => {
+    tone(523, 110, 0.06, 'triangle');
+    setTimeout(() => tone(784, 140, 0.06, 'triangle'), 110);
+  },
+  // Game start: bright fanfare (3 ascending notes)
+  gameStart: () => {
+    [523, 659, 880].forEach((f, i) =>
+      setTimeout(() => tone(f, 160, 0.07, 'triangle'), i * 100),
+    );
+  },
+  // Round/turn end: descending two-note
   roundEnd: () => {
     tone(440, 150, 0.06, 'sine');
     setTimeout(() => tone(330, 220, 0.05, 'sine'), 100);
   },
+  // Game end / podium: 4-note ascending fanfare
   fanfare: () => {
     [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 180, 0.07, 'triangle'), i * 110));
+  },
+  // Player joined: quick blip up
+  playerJoin: () => {
+    tone(620, 80, 0.05, 'triangle');
+    setTimeout(() => tone(820, 110, 0.05, 'triangle'), 70);
+  },
+  // Player left: low descending blip (different from correct/round-end)
+  playerLeave: () => {
+    tone(420, 90, 0.05, 'sawtooth');
+    setTimeout(() => tone(280, 160, 0.05, 'sawtooth'), 80);
   },
 };

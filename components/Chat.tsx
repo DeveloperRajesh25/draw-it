@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { CHAT_MAX_LENGTH } from '@/lib/constants';
 import type { ChatMessage } from '@/lib/types';
 import { useRoomStore } from '@/lib/store';
-import { broadcastChat } from '@/lib/use-room';
+import { broadcastChat, broadcastStateRefresh } from '@/lib/use-room';
 
 type Props = {
   messages: ChatMessage[];
@@ -42,6 +42,28 @@ export function Chat(props: Props) {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages.length, messages[messages.length - 1]?.id]);
+
+  // While the input is focused on mobile, lock the body so iOS doesn't
+  // translate the whole page up by the keyboard height. The room shell is
+  // already bound to visualViewport.height in Game.tsx, so blocking the
+  // body scroll keeps the canvas + chat clamped to the visible region.
+  const onInputFocus = React.useCallback(() => {
+    if (typeof document !== 'undefined') {
+      document.body.classList.add('kbd-open');
+    }
+  }, []);
+  const onInputBlur = React.useCallback(() => {
+    if (typeof document !== 'undefined') {
+      document.body.classList.remove('kbd-open');
+    }
+  }, []);
+  React.useEffect(() => {
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.body.classList.remove('kbd-open');
+      }
+    };
+  }, []);
 
   const send = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -99,6 +121,11 @@ export function Chat(props: Props) {
           };
           appendChat(upgraded);
           broadcastChat(roomCode, upgraded);
+          // The server may have flagged the round as "everyone guessed" and
+          // moved phase_ends_at to NOW(). Tell peers to refresh so their
+          // timer + phase advance together — without this they'd wait on
+          // the rooms postgres_changes event (often delayed).
+          broadcastStateRefresh(roomCode);
         } else if (j.close) {
           const upgraded: ChatMessage = {
             id,
@@ -139,6 +166,8 @@ export function Chat(props: Props) {
           <input
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
+            onFocus={onInputFocus}
+            onBlur={onInputBlur}
             placeholder={canChat ? 'Type your guess here...' : 'Chat is locked'}
             disabled={!canChat}
             inputMode="text"
@@ -146,7 +175,8 @@ export function Chat(props: Props) {
             autoCorrect="off"
             spellCheck={false}
             enterKeyHint="send"
-            className="h-10 min-w-0 flex-1 rounded-md border-2 border-ink bg-paper px-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-coral disabled:opacity-50"
+            // 16px font on mobile prevents iOS from auto-zooming the page on focus.
+            className="h-10 min-w-0 flex-1 rounded-md border-2 border-ink bg-paper px-3 text-base text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-coral disabled:opacity-50 sm:text-sm"
           />
           <button
             type="submit"

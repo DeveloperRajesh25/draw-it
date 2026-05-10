@@ -129,15 +129,21 @@ function RoomShell({
     }
   }, [state, onMissing]);
 
-  // Sound on phase transitions
+  // Sound on phase transitions. We compare the current phase against the
+  // *previous* one so we can distinguish "game just started" (lobby → word-
+  // pick) from "next round" (round-end → word-pick).
   const lastPhaseRef = React.useRef<string>('');
   React.useEffect(() => {
     const phase = state?.room?.phase;
     if (!phase) return;
-    if (lastPhaseRef.current && lastPhaseRef.current !== phase) {
+    const prev = lastPhaseRef.current;
+    if (prev && prev !== phase) {
       if (phase === 'round-end') sfx.roundEnd();
       else if (phase === 'game-end') sfx.fanfare();
-      else if (phase === 'word-pick') sfx.wordPick();
+      else if (phase === 'word-pick') {
+        if (prev === 'lobby') sfx.gameStart();
+        else sfx.wordPick();
+      }
     }
     lastPhaseRef.current = phase;
   }, [state?.room?.phase]);

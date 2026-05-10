@@ -9,6 +9,7 @@ import type { ChatMessage, StrokePreviewSegment } from './types';
 
 const PREVIEW_EVENT = 'stroke-preview';
 const CHAT_EVENT = 'chat-msg';
+const STATE_REFRESH_EVENT = 'state-refresh';
 
 type PreviewListener = (seg: StrokePreviewSegment) => void;
 
@@ -107,6 +108,20 @@ export function broadcastChat(code: string, msg: ChatMessage): boolean {
   const ch = channelByCode.get(code);
   if (!ch) return false;
   ch.send({ type: 'broadcast', event: CHAT_EVENT, payload: msg });
+  return true;
+}
+
+/**
+ * Tell every other client in the room "something changed, pull a fresh
+ * snapshot now". Used as a belt-and-suspenders alongside postgres_changes —
+ * Realtime CDC for `rooms`/`players` is sometimes delayed by hundreds of ms
+ * or dropped entirely on flaky connections. This broadcast is peer-to-peer
+ * over the WebSocket and arrives instantly.
+ */
+export function broadcastStateRefresh(code: string): boolean {
+  const ch = channelByCode.get(code);
+  if (!ch) return false;
+  ch.send({ type: 'broadcast', event: STATE_REFRESH_EVENT, payload: { at: Date.now() } });
   return true;
 }
 
@@ -256,6 +271,12 @@ export function useRoom(code: string, playerId: string) {
           if (!payload) return;
           appendChat(payload as ChatMessage);
         })
+        .on('broadcast', { event: STATE_REFRESH_EVENT }, () => {
+          // Some peer signalled "state changed, refetch now". Cheap belt-and-
+          // suspenders against postgres_changes lag/drop. The refetch is
+          // coalesced + rate-limited inside refetchRoomSnapshot.
+          void refetchRoomSnapshot(code, playerId);
+        })
         .on('presence', { event: 'sync' }, () => {
           const stateMap = channel.presenceState() as Record<string, unknown>;
           const ids = new Set<string>(Object.keys(stateMap));
@@ -268,6 +289,17 @@ export function useRoom(code: string, playerId: string) {
             } catch (e) {
               console.error('Presence track failed', e);
             }
+            // Tell everyone else in the room to pull a fresh snapshot. This is
+            // how a freshly-joined player makes the host's lobby update without
+            // waiting on postgres_changes (which is sometimes laggy or drops
+            // INSERT events on the players table).
+            try {
+              channel.send({
+                type: 'broadcast',
+                event: STATE_REFRESH_EVENT,
+                payload: { at: Date.now() },
+              });
+            } catch {/* ignore */}
           }
         });
 
