@@ -6,14 +6,20 @@ import { sfx } from '@/lib/sound';
 type Props = {
   endsAt: string | null;
   totalSeconds: number;
-  // Called when the local clock hits 0. Caller debounces server calls.
+  /**
+   * Called when the local clock has hit 0. The Timer keeps re-firing every
+   * ~2.5s while still past-due, so a transient network failure on the first
+   * tick won't strand the room (the next attempt advances).
+   * Caller should debounce server calls of its own.
+   */
   onExpire?: () => void;
   className?: string;
 };
 
+const FIRE_GATE_MS = 2500;
+
 export function Timer({ endsAt, totalSeconds, onExpire, className }: Props) {
   const [now, setNow] = React.useState(() => Date.now());
-  const lastFiredRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -23,6 +29,7 @@ export function Timer({ endsAt, totalSeconds, onExpire, className }: Props) {
   const remainingMs = endsAt ? Math.max(0, new Date(endsAt).getTime() - now) : 0;
   const remaining = Math.ceil(remainingMs / 1000);
 
+  // Tick sound during the last 10 seconds.
   const lastTickedRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     if (!endsAt) return;
@@ -32,14 +39,23 @@ export function Timer({ endsAt, totalSeconds, onExpire, className }: Props) {
     sfx.tick();
   }, [remaining, endsAt]);
 
+  // Fire-gate: reset whenever endsAt changes (new phase = fresh debounce window).
+  const lastFireAtRef = React.useRef<number>(0);
+  React.useEffect(() => {
+    lastFireAtRef.current = 0;
+    lastTickedRef.current = null;
+  }, [endsAt]);
+
+  // Fire onExpire while past-due, at most every FIRE_GATE_MS. This effect
+  // re-runs every 250ms because `remainingMs` changes with the now-tick, so
+  // it naturally retries if the previous attempt didn't transition the room.
   React.useEffect(() => {
     if (!endsAt) return;
     if (remainingMs > 0) return;
-    if (lastFiredRef.current === endsAt) return;
-    lastFiredRef.current = endsAt;
-    // Small debounce to let races settle
-    const t = setTimeout(() => onExpire?.(), 250);
-    return () => clearTimeout(t);
+    const t = Date.now();
+    if (t - lastFireAtRef.current < FIRE_GATE_MS) return;
+    lastFireAtRef.current = t;
+    onExpire?.();
   }, [endsAt, remainingMs, onExpire]);
 
   const pct = Math.min(1, Math.max(0, totalSeconds > 0 ? remainingMs / 1000 / totalSeconds : 0));

@@ -39,21 +39,26 @@ export async function POST(
       return NextResponse.json({ ok: true, alreadyAhead: true });
     }
 
+    const tag = `[tick ${code} ${room.phase} r${room.round}t${room.turnInRound}]`;
     switch (room.phase) {
       case 'word-pick': {
         const r = await transitionWordPickToDrawing(sb, room, 0);
+        if (!r.ok) console.log(`${tag} word-pick→drawing not applied: ${r.reason}`);
         return NextResponse.json({ ok: true, raceLost: !r.ok });
       }
       case 'drawing': {
         const r = await transitionDrawingToRoundEnd(sb, room, 'time-up');
+        if (!r.ok) console.log(`${tag} drawing→round-end not applied: ${r.reason}`);
         return NextResponse.json({ ok: true, raceLost: !r.ok });
       }
       case 'round-end': {
         const r = await transitionRoundEndToNext(sb, room);
+        if (!r.ok) console.log(`${tag} round-end→next not applied: ${r.reason}`);
         return NextResponse.json({ ok: true, raceLost: !r.ok });
       }
       case 'game-end': {
         const r = await transitionGameEndToLobby(sb, room);
+        if (!r.ok) console.log(`${tag} game-end→lobby not applied: ${r.reason}`);
         return NextResponse.json({ ok: true, raceLost: !r.ok });
       }
       default:

@@ -108,7 +108,11 @@ export async function transitionLobbyToWordPick(
     .select()
     .single();
 
-  if (error || !data) return { ok: false, reason: 'Race lost or update failed' };
+  if (error) {
+    console.error(`[transitionLobbyToWordPick] ${room.code}`, error);
+    return { ok: false, reason: `DB error: ${error.message}` };
+  }
+  if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
   return { ok: true };
 }
 
@@ -154,7 +158,11 @@ export async function transitionWordPickToDrawing(
     .select()
     .single();
 
-  if (error || !data) return { ok: false, reason: 'Race lost or update failed' };
+  if (error) {
+    console.error(`[transitionWordPickToDrawing] ${room.code}`, error);
+    return { ok: false, reason: `DB error: ${error.message}` };
+  }
+  if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
   return { ok: true };
 }
 
@@ -230,7 +238,11 @@ export async function transitionDrawingToRoundEnd(
     .select()
     .single();
 
-  if (error || !data) return { ok: false, reason: 'Race lost or update failed' };
+  if (error) {
+    console.error(`[transitionDrawingToRoundEnd] ${room.code}`, error);
+    return { ok: false, reason: `DB error: ${error.message}` };
+  }
+  if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
 
   const wordReveal = room.word ?? '???';
   const msg =
@@ -298,7 +310,11 @@ export async function transitionRoundEndToNext(
       .eq('phase', 'round-end')
       .select()
       .single();
-    if (error || !data) return { ok: false, reason: 'Race lost or update failed' };
+    if (error) {
+      console.error(`[transitionRoundEndToNext→game-end] ${room.code}`, error);
+      return { ok: false, reason: `DB error: ${error.message}` };
+    }
+    if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
     await sysMessage(sb, room.code, 'Game over! See the podium.');
     return { ok: true };
   }
@@ -333,7 +349,11 @@ export async function transitionRoundEndToNext(
     .eq('phase', 'round-end')
     .select()
     .single();
-  if (error || !data) return { ok: false, reason: 'Race lost or update failed' };
+  if (error) {
+    console.error(`[transitionRoundEndToNext→word-pick] ${room.code}`, error);
+    return { ok: false, reason: `DB error: ${error.message}` };
+  }
+  if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
   return { ok: true };
 }
 
@@ -380,7 +400,11 @@ export async function transitionGameEndToLobby(
     .eq('phase', 'game-end')
     .select()
     .single();
-  if (error || !data) return { ok: false, reason: 'Race lost or update failed' };
+  if (error) {
+    console.error(`[transitionGameEndToLobby] ${room.code}`, error);
+    return { ok: false, reason: `DB error: ${error.message}` };
+  }
+  if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
   return { ok: true };
 }
 
