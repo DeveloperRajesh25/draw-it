@@ -42,10 +42,9 @@ export async function POST(
       return NextResponse.json({ ok: true, rejoined: true });
     }
 
-    if (room.phase !== 'lobby') {
-      return jsonError('Game already in progress, ask the host', 409);
-    }
-
+    // Anyone can join at any time — including mid-game. New joiners are
+    // spectators+guessers for the current round and start participating in
+    // the rotation from the next turn the server picks them.
     const { count } = await sb
       .from('players')
       .select('id', { count: 'exact', head: true })

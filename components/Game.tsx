@@ -6,42 +6,17 @@ import { Canvas } from './Canvas';
 import { Chat } from './Chat';
 import { PlayerList } from './PlayerList';
 import { RoomPill } from './RoomPill';
+import { RoundEndOverlay } from './RoundEnd';
 import { SoundToggle } from './SoundToggle';
 import { Timer } from './Timer';
 import { Toolbar } from './Toolbar';
 import { WordPattern } from './WordPattern';
+import { WordPickOverlay } from './WordPick';
 import { Button } from './ui/Button';
 import { leaveRoom } from '@/lib/leave';
 import { sfx } from '@/lib/sound';
 import type { ChatMessage, HintReveal, Player, Room, Stroke, Tool } from '@/lib/types';
-import { COLORS, BRUSH_SIZES } from '@/lib/constants';
-
-/**
- * Tracks the visualViewport height on mobile. When the on-screen keyboard
- * opens, visualViewport.height shrinks while window.innerHeight does not —
- * so binding the room shell to this value (instead of dvh alone) keeps the
- * chat input glued just above the keyboard on every mobile browser.
- */
-function useViewportHeight(): number | null {
-  const [h, setH] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const vv = window.visualViewport;
-    const read = () => setH(vv ? vv.height : window.innerHeight);
-    read();
-    if (vv) {
-      vv.addEventListener('resize', read);
-      vv.addEventListener('scroll', read);
-      return () => {
-        vv.removeEventListener('resize', read);
-        vv.removeEventListener('scroll', read);
-      };
-    }
-    window.addEventListener('resize', read);
-    return () => window.removeEventListener('resize', read);
-  }, []);
-  return h;
-}
+import { COLORS, BRUSH_SIZES, TIMING } from '@/lib/constants';
 
 type Props = {
   room: Room;
@@ -51,6 +26,7 @@ type Props = {
   hintReveals: HintReveal[];
   meId: string;
   connectedIds: Set<string>;
+  drawer: Player | null;
   onTick: () => void;
 };
 
@@ -62,13 +38,17 @@ export function Game({
   hintReveals,
   meId,
   connectedIds,
+  drawer,
   onTick,
 }: Props) {
   const router = useRouter();
   const me = players.find((p) => p.id === meId);
   const isDrawer = room.drawerId === meId;
-  const canDraw = isDrawer && room.phase === 'drawing';
-  const canChat = !!me && (!isDrawer || room.phase !== 'drawing');
+  const inDrawing = room.phase === 'drawing';
+  const inWordPick = room.phase === 'word-pick';
+  const inRoundEnd = room.phase === 'round-end';
+  const canDraw = isDrawer && inDrawing;
+  const canChat = !!me && (!isDrawer || !inDrawing);
 
   const [tool, setTool] = React.useState<Tool>('brush');
   const [color, setColor] = React.useState<string>(COLORS[1]); // default black
@@ -91,9 +71,7 @@ export function Game({
     if (didAnyNew) sfx.correctGuess();
   }, [chat]);
 
-  // Sound: blip when a player count drops (someone left). We compare against
-  // the previous render's player ids and play once per disappearance, but
-  // skip the very first render (otherwise rejoiners would hear it for ghosts).
+  // Sound: blip when a player count drops (someone left).
   const seenPlayerIdsRef = React.useRef<Set<string> | null>(null);
   React.useEffect(() => {
     const next = new Set(players.map((p) => p.id));
@@ -109,10 +87,8 @@ export function Game({
     seenPlayerIdsRef.current = next;
   }, [players]);
 
-  const viewportHeight = useViewportHeight();
-
   React.useEffect(() => {
-    if (room.phase !== 'drawing') return;
+    if (!inDrawing) return;
     const id = setInterval(() => {
       const key = `${room.round}-${room.turnInRound}-${Math.floor(Date.now() / 5000)}`;
       if (key === lastRevealKey.current) return;
@@ -124,7 +100,7 @@ export function Game({
       }).catch(() => {/* ignore */});
     }, 1000);
     return () => clearInterval(id);
-  }, [room.phase, room.code, room.round, room.turnInRound, meId]);
+  }, [inDrawing, room.code, room.round, room.turnInRound, meId]);
 
   const onCommitStroke = React.useCallback(
     async (s: { id: string; tool: Tool; color: string; size: number; points: number[] }) => {
@@ -174,37 +150,43 @@ export function Game({
     router.push('/');
   };
 
-  // On mobile we bind the shell height to the visual viewport, so the chat
-  // input is always glued to the top edge of the keyboard. On lg+ we revert
-  // to dvh so the layout doesn't twitch when desktop text-IME panels open.
-  const [isLg, setIsLg] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1024px)');
-    const apply = () => setIsLg(mq.matches);
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
-  const shellStyle: React.CSSProperties =
-    viewportHeight && !isLg ? { height: `${viewportHeight}px` } : {};
+  // Timer source-of-truth depends on phase. The bar shows a single timer that
+  // re-syncs whenever the phase transitions.
+  const timerTotal = inDrawing
+    ? room.settings.drawTimeSeconds
+    : inWordPick
+      ? TIMING.WORD_PICK_SECONDS
+      : TIMING.ROUND_END_SECONDS;
 
   return (
-    <main
-      className="mx-auto flex w-full max-w-6xl flex-col overflow-hidden px-2 pt-1.5 pb-1.5 sm:h-dvh sm:px-5 sm:pt-3 sm:pb-3"
-      style={shellStyle}
-    >
-      {/* Top bar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-1.5 shadow-doodle-sm sm:p-2 sm:gap-3">
-        <RoomPill code={room.code} className="shrink-0" />
-        <div className="ml-auto flex items-center gap-2">
-          <span className="hidden text-xs text-ink-soft sm:inline">
-            Round {room.round}/{room.settings.rounds}
+    <main className="game-shell mx-auto flex w-full max-w-6xl flex-col px-2 pt-2 pb-2 sm:px-4 sm:pt-3 sm:pb-3">
+      {/* Header — single strip: timer/round on left, word pattern centered,
+          sound + leave on right. Mirrors skribbl.io's compact top bar. */}
+      <div className="flex shrink-0 items-center gap-2 rounded-lg border-2 border-ink bg-paper px-2 py-1.5 shadow-doodle-sm sm:gap-3 sm:px-3 sm:py-2">
+        <div className="flex shrink-0 flex-col items-center leading-none">
+          <Timer endsAt={room.phaseEndsAt} totalSeconds={timerTotal} onExpire={onTick} />
+          <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-soft sm:text-[11px]">
+            R{room.round}/{room.settings.rounds}
           </span>
-          <Timer
-            endsAt={room.phaseEndsAt}
-            totalSeconds={room.settings.drawTimeSeconds}
-            onExpire={onTick}
-          />
+        </div>
+        <div className="flex min-w-0 flex-1 items-center justify-center px-1">
+          {inDrawing ? (
+            <WordPattern
+              pattern={room.wordPattern}
+              reveals={hintReveals}
+              isDrawer={isDrawer}
+              word={room.word}
+            />
+          ) : inRoundEnd && room.word ? (
+            <span className="font-display text-xl text-ink sm:text-2xl">{room.word}</span>
+          ) : (
+            <span className="font-display text-lg text-ink-soft sm:text-xl">
+              {inWordPick ? 'Choosing word…' : 'Get ready…'}
+            </span>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+          <RoomPill code={room.code} />
           <SoundToggle />
           <Button
             size="sm"
@@ -213,27 +195,15 @@ export function Game({
             disabled={leaving}
             loading={leaving}
             aria-label="Leave"
+            className="px-2"
           >
             {!leaving && <LogOut className="h-4 w-4" />}
           </Button>
         </div>
-        <div className="basis-full">
-          <div className="flex items-center justify-center gap-2">
-            <span className="text-[11px] uppercase tracking-wider text-ink-soft sm:hidden">
-              R{room.round}/{room.settings.rounds}
-            </span>
-            <WordPattern
-              pattern={room.wordPattern}
-              reveals={hintReveals}
-              isDrawer={isDrawer}
-              word={room.word}
-            />
-          </div>
-        </div>
       </div>
 
-      {/* Mobile players strip — horizontal scroll, ultra-compact */}
-      <div className="mt-1.5 shrink-0 lg:hidden">
+      {/* Players strip — horizontal on mobile, sidebar on desktop. */}
+      <div className="mt-1.5 shrink-0 sm:mt-2 lg:hidden">
         <PlayerList
           players={players}
           drawerId={room.drawerId}
@@ -244,9 +214,9 @@ export function Game({
         />
       </div>
 
-      {/* Body — mobile: flex column with chat taking remaining height; lg: 3-col grid */}
-      <div className="mt-1.5 flex min-h-0 flex-1 flex-col gap-1.5 sm:mt-3 sm:gap-3 lg:grid lg:grid-cols-[220px_1fr_300px]">
-        {/* Players (desktop only) */}
+      {/* Body — mobile: stacked; lg: 3-col grid */}
+      <div className="mt-1.5 flex min-h-0 flex-1 flex-col gap-1.5 sm:mt-2 sm:gap-2 lg:grid lg:grid-cols-[220px_1fr_300px] lg:gap-3">
+        {/* Players sidebar (desktop only) */}
         <div className="hidden lg:order-1 lg:block lg:overflow-y-auto">
           <div className="lg:sticky lg:top-0">
             <PlayerList
@@ -259,8 +229,9 @@ export function Game({
           </div>
         </div>
 
-        {/* Canvas + toolbar */}
-        <div className="flex shrink-0 flex-col gap-2 lg:order-2 lg:min-h-0">
+        {/* Canvas + toolbar block */}
+        <div className="flex shrink-0 flex-col gap-1.5 sm:gap-2 lg:order-2 lg:min-h-0">
+          {/* Toolbar — only when drawing. Reserve space so layout doesn't jump. */}
           {canDraw && (
             <Toolbar
               tool={tool}
@@ -273,7 +244,11 @@ export function Game({
               onClear={onClear}
             />
           )}
-          <div className="canvas-mobile-fit mx-auto w-full">
+          {/* Canvas frame: sized purely from container width. The aspect ratio
+              keeps the height proportional, and the keyboard opening on mobile
+              never changes the width — so the canvas dimensions are fixed
+              while typing. */}
+          <div className="canvas-frame relative mx-auto w-full">
             <Canvas
               roomCode={room.code}
               strokes={strokes}
@@ -283,10 +258,16 @@ export function Game({
               size={size}
               onCommitStroke={onCommitStroke}
             />
+            {inWordPick && (
+              <WordPickOverlay room={room} meId={meId} drawer={drawer} />
+            )}
+            {inRoundEnd && (
+              <RoundEndOverlay room={room} players={players} />
+            )}
           </div>
         </div>
 
-        {/* Chat — mobile: flex-1 (fills remaining); lg: fixed height */}
+        {/* Chat — mobile: fills remaining height; lg: fixed-ish height column */}
         <div className="min-h-0 flex-1 lg:order-3 lg:h-[68dvh] lg:flex-none">
           <Chat
             messages={chat}

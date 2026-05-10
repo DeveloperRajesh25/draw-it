@@ -43,26 +43,15 @@ export function Chat(props: Props) {
     el.scrollTop = el.scrollHeight;
   }, [messages.length, messages[messages.length - 1]?.id]);
 
-  // While the input is focused on mobile, lock the body so iOS doesn't
-  // translate the whole page up by the keyboard height. The room shell is
-  // already bound to visualViewport.height in Game.tsx, so blocking the
-  // body scroll keeps the canvas + chat clamped to the visible region.
+  // When the chat input gains focus on mobile, scroll it into view above the
+  // on-screen keyboard. We deliberately do NOT lock the body or rebind the
+  // shell height — the canvas is sized in `svh` units, which are stable when
+  // the keyboard opens, so it never resizes while typing.
+  const inputRef = React.useRef<HTMLInputElement>(null);
   const onInputFocus = React.useCallback(() => {
-    if (typeof document !== 'undefined') {
-      document.body.classList.add('kbd-open');
-    }
-  }, []);
-  const onInputBlur = React.useCallback(() => {
-    if (typeof document !== 'undefined') {
-      document.body.classList.remove('kbd-open');
-    }
-  }, []);
-  React.useEffect(() => {
-    return () => {
-      if (typeof document !== 'undefined') {
-        document.body.classList.remove('kbd-open');
-      }
-    };
+    requestAnimationFrame(() => {
+      inputRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+    });
   }, []);
 
   const send = (e?: React.FormEvent) => {
@@ -164,10 +153,10 @@ export function Chat(props: Props) {
       <form onSubmit={send} className="border-t-2 border-ink bg-paper-dark p-2">
         <div className="flex items-center gap-2">
           <input
+            ref={inputRef}
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
             onFocus={onInputFocus}
-            onBlur={onInputBlur}
             placeholder={canChat ? 'Type your guess here...' : 'Chat is locked'}
             disabled={!canChat}
             inputMode="text"

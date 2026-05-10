@@ -150,26 +150,38 @@
     border-radius: 4px;
   }
 
-  /* Caps the canvas so the game screen fits within 100dvh on mobile and
-     shrinks proportionally when the on-screen keyboard opens. The width is
-     capped to whatever width gives a 4:3 canvas at the available height; the
-     room shell binds its height to visualViewport on mobile, so this stays
-     valid when the keyboard is open. On lg+ the canvas fills its grid column
-     normally. */
-  .canvas-mobile-fit {
-    max-width: min(100%, calc(34dvh * 4 / 3));
+  /* Game shell — pinned to the small viewport unit so the layout never jumps
+     when the address bar or on-screen keyboard appears. Width drives the
+     canvas size, so the canvas height never changes while typing. */
+  .game-shell {
+    min-height: 100svh;
   }
-  @media (min-width: 1024px) {
-    .canvas-mobile-fit {
-      max-width: none;
+  @media (min-width: 640px) {
+    .game-shell {
+      height: 100dvh;
     }
   }
-  /* Block iOS body-scroll while the chat input is focused — without this
-     iOS will translate the whole page up by the keyboard height, leaving
-     the top of the room peeking above the URL bar. */
-  body.kbd-open {
-    position: fixed;
-    inset: 0;
-    overflow: hidden;
+
+  /* Canvas frame — width comes from the container; height is locked by the
+     aspect ratio applied inside Canvas.tsx. On mobile we cap the height by
+     the small viewport unit so the canvas + chat fit on screen without
+     scrolling. The width-based aspect-ratio means an opened keyboard
+     (which shrinks visualViewport.height but not width) leaves the frame
+     untouched. */
+  .canvas-frame {
+    max-height: 46svh;
+    max-width: calc(46svh * 4 / 3);
+  }
+  @media (min-width: 640px) {
+    .canvas-frame {
+      max-height: 60dvh;
+      max-width: calc(60dvh * 4 / 3);
+    }
+  }
+  @media (min-width: 1024px) {
+    .canvas-frame {
+      max-height: none;
+      max-width: none;
+    }
   }
 }

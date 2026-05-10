@@ -5,8 +5,6 @@ import { GameEnd } from '@/components/GameEnd';
 import { Game } from '@/components/Game';
 import { JoinForm } from '@/components/JoinForm';
 import { Lobby } from '@/components/Lobby';
-import { RoundEnd } from '@/components/RoundEnd';
-import { WordPick } from '@/components/WordPick';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody } from '@/components/ui/Card';
 import { isValidRoomCode } from '@/lib/room-code';
@@ -211,10 +209,8 @@ function RoomShell({
         />
       );
     case 'word-pick':
-      return (
-        <WordPick room={state.room} meId={playerId} drawer={drawer} onTick={onTick} />
-      );
     case 'drawing':
+    case 'round-end':
       return (
         <Game
           room={state.room}
@@ -224,11 +220,10 @@ function RoomShell({
           hintReveals={state.hintReveals}
           meId={playerId}
           connectedIds={connectedIds}
+          drawer={drawer}
           onTick={onTick}
         />
       );
-    case 'round-end':
-      return <RoundEnd room={state.room} players={state.players} onTick={onTick} />;
     case 'game-end':
       return (
         <GameEnd

@@ -2,22 +2,23 @@
 import * as React from 'react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
-import { Card, CardBody } from './ui/Card';
-import { Timer } from './Timer';
 import type { Player, Room } from '@/lib/types';
-import { TIMING } from '@/lib/constants';
 import { broadcastStateRefresh, refetchRoomSnapshot } from '@/lib/use-room';
 
-export function WordPick({
+/**
+ * Overlay shown over the canvas area during the 'word-pick' phase. Drawer
+ * picks a word; everyone else sees a "X is choosing…" placeholder. The
+ * surrounding game chrome (top bar, players, chat) stays mounted so the
+ * screen never feels like it left the room.
+ */
+export function WordPickOverlay({
   room,
   meId,
   drawer,
-  onTick,
 }: {
   room: Room;
   meId: string;
   drawer: Player | null;
-  onTick: () => void;
 }) {
   const isDrawer = room.drawerId === meId;
   const [pickedIdx, setPickedIdx] = React.useState<number | null>(null);
@@ -33,11 +34,7 @@ export function WordPick({
         body: JSON.stringify({ playerId: meId, wordIndex: idx }),
       });
       if (res.ok) {
-        // Don't wait for Realtime CDC — pull the new 'drawing' state now.
         await refetchRoomSnapshot(room.code, meId);
-        // Tell every other player to refetch too. Without this they wait
-        // on postgres_changes for the rooms row, which is sometimes laggy
-        // or dropped — leaving non-drawer clients stranded on word-pick.
         broadcastStateRefresh(room.code);
       } else {
         setPickedIdx(null);
@@ -48,63 +45,51 @@ export function WordPick({
   };
 
   return (
-    <main className="mx-auto flex h-dvh max-w-3xl flex-col items-center justify-center overflow-hidden px-5 py-6">
-      <Card className="w-full">
-        <CardBody className="flex flex-col items-center gap-5 p-6 sm:p-8">
-          <Timer endsAt={room.phaseEndsAt} totalSeconds={TIMING.WORD_PICK_SECONDS} onExpire={onTick} />
-          {isDrawer ? (
-            <>
-              <h2 className="font-display text-3xl text-ink">Pick a word</h2>
-              <div className="grid w-full gap-3 sm:grid-cols-3">
-                {(room.wordOptions ?? []).map((w, i) => {
-                  const isPicked = pickedIdx === i;
-                  return (
-                    <motion.button
-                      key={w + i}
-                      initial={{ y: 8, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      transition={{ delay: i * 0.05 }}
-                      type="button"
-                      onClick={() => select(i)}
-                      disabled={busy}
-                      aria-busy={isPicked || undefined}
-                      className={`press-doodle relative rounded-xl border-2 border-ink px-4 py-6 text-center font-display text-2xl shadow-doodle transition ${
-                        isPicked
-                          ? 'bg-mustard'
-                          : busy
-                            ? 'bg-paper-dark/60 opacity-60'
-                            : 'bg-paper-dark hover:bg-mustard'
-                      }`}
-                    >
-                      {isPicked && (
-                        <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin" />
-                      )}
-                      {w}
-                    </motion.button>
-                  );
-                })}
-              </div>
-              <p className="text-sm text-ink-faint">If you don&rsquo;t pick, the first option is auto-selected.</p>
-            </>
-          ) : (
-            <>
-              <h2 className="font-display text-3xl text-ink">
-                {drawer?.name ?? 'Someone'} is choosing…
-              </h2>
-              <div className="grid w-full gap-3 sm:grid-cols-3">
-                {Array.from({ length: room.settings.wordCount }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-xl border-2 border-dashed border-ink/40 bg-paper-dark/40 px-4 py-6"
-                  >
-                    <div className="mx-auto h-3 w-2/3 animate-pulse rounded-full bg-ink/15" />
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </CardBody>
-      </Card>
-    </main>
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-lg bg-linear-to-b from-ink/85 to-ink/95 px-4 py-5 text-paper backdrop-blur-sm sm:gap-5 sm:px-6">
+      {isDrawer ? (
+        <>
+          <h2 className="font-display text-2xl text-paper sm:text-3xl">Pick a word</h2>
+          <div className="grid w-full max-w-md gap-2 sm:gap-3">
+            {(room.wordOptions ?? []).map((w, i) => {
+              const isPicked = pickedIdx === i;
+              return (
+                <motion.button
+                  key={w + i}
+                  initial={{ y: 6, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: i * 0.04 }}
+                  type="button"
+                  onClick={() => select(i)}
+                  disabled={busy}
+                  aria-busy={isPicked || undefined}
+                  className={`press-doodle relative rounded-xl border-2 border-paper px-4 py-3.5 text-center font-display text-2xl shadow-doodle-sm transition sm:py-4 sm:text-3xl ${
+                    isPicked
+                      ? 'bg-mustard text-ink'
+                      : busy
+                        ? 'bg-paper/10 text-paper/60'
+                        : 'bg-paper text-ink hover:bg-mustard'
+                  }`}
+                >
+                  {isPicked && (
+                    <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin" />
+                  )}
+                  {w}
+                </motion.button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-paper/70 sm:text-sm">
+            If you don&rsquo;t pick, the first option is auto-selected.
+          </p>
+        </>
+      ) : (
+        <>
+          <h2 className="text-center font-display text-2xl text-paper sm:text-3xl">
+            {drawer?.name ?? 'Someone'} is choosing&hellip;
+          </h2>
+          <Loader2 className="h-7 w-7 animate-spin text-paper/80" />
+        </>
+      )}
+    </div>
   );
 }
