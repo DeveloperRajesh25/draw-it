@@ -198,7 +198,6 @@ export async function transitionDrawingToRoundEnd(
         });
 
   if (drawerAward > 0 && room.drawerId) {
-    await sb.rpc('cleanup_disconnected_players').then(() => {/* keep table size sane occasionally */});
     const { data: drawerRow } = await sb
       .from('players')
       .select('score, points_this_round')

@@ -11,7 +11,7 @@ import { Timer } from './Timer';
 import { Toolbar } from './Toolbar';
 import { WordPattern } from './WordPattern';
 import { Button } from './ui/Button';
-import { setSession } from '@/lib/identity';
+import { leaveRoom } from '@/lib/leave';
 import { sfx } from '@/lib/sound';
 import type { ChatMessage, HintReveal, Player, Room, Stroke, Tool } from '@/lib/types';
 import { COLORS, BRUSH_SIZES } from '@/lib/constants';
@@ -122,12 +122,12 @@ export function Game({
   };
 
   const leave = async () => {
-    setSession(null);
-    fetch(`/api/rooms/${room.code}/leave`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: meId }),
-    }).catch(() => {/* ignore */});
+    const { ok } = await leaveRoom({
+      code: room.code,
+      playerId: meId,
+      totalPlayers: players.length,
+    });
+    if (!ok) return;
     router.push('/');
   };
 

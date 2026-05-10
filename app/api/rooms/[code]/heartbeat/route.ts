@@ -23,6 +23,13 @@ export async function POST(
       .eq('room_code', code)
       .eq('id', playerId);
 
+    // Lazy janitor: ~5% of heartbeats sweep stale rows + empty rooms across the
+    // whole table. With 20s heartbeats × multiple players, cleanup runs every
+    // ~minute somewhere on the platform — no Vercel Cron required.
+    if (Math.random() < 0.05) {
+      await sb.rpc('cleanup_disconnected_players');
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e) {
     return handleZod(e);

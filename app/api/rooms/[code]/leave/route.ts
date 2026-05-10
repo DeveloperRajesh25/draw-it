@@ -64,6 +64,16 @@ export async function POST(
         .eq('phase', 'drawing');
     }
 
+    // If the room is now empty, delete it. Cascade removes strokes/chat/hints.
+    const { count: remaining } = await sb
+      .from('players')
+      .select('id', { count: 'exact', head: true })
+      .eq('room_code', code);
+    if ((remaining ?? 0) === 0) {
+      await sb.from('rooms').delete().eq('code', code);
+      return NextResponse.json({ ok: true, roomDeleted: true });
+    }
+
     await bumpRoomActivity(sb, code);
     return NextResponse.json({ ok: true });
   } catch (e) {

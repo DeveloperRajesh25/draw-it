@@ -9,7 +9,7 @@ import { PlayerList } from './PlayerList';
 import { RoomPill } from './RoomPill';
 import type { Player, Room, RoomSettings, WordMode } from '@/lib/types';
 import { SETTINGS_LIMITS } from '@/lib/constants';
-import { setSession } from '@/lib/identity';
+import { leaveRoom } from '@/lib/leave';
 
 type Props = {
   room: Room;
@@ -43,12 +43,12 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
   };
 
   const leave = async () => {
-    setSession(null);
-    fetch(`/api/rooms/${room.code}/leave`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: meId }),
-    }).catch(() => {/* ignore */});
+    const { ok } = await leaveRoom({
+      code: room.code,
+      playerId: meId,
+      totalPlayers: players.length,
+    });
+    if (!ok) return;
     router.push('/');
   };
 
