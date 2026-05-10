@@ -149,4 +149,17 @@
     background: hsl(var(--ink) / 0.3);
     border-radius: 4px;
   }
+
+  /* Caps the canvas so the game screen fits within 100dvh on mobile and
+     shrinks proportionally when the on-screen keyboard opens. The width is
+     capped to whatever width gives a 4:3 canvas at <= 38dvh tall. On lg+
+     viewports the canvas fills its grid column normally. */
+  .canvas-mobile-fit {
+    max-width: min(100%, calc(38dvh * 4 / 3));
+  }
+  @media (min-width: 1024px) {
+    .canvas-mobile-fit {
+      max-width: none;
+    }
+  }
 }

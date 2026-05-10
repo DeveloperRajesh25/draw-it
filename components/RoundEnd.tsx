@@ -32,8 +32,8 @@ export function RoundEnd({
   }, [room.phaseEndsAt]);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col items-center justify-center px-5 py-8">
-      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full">
+    <main className="mx-auto flex h-dvh max-w-2xl flex-col items-center justify-center overflow-hidden px-5 py-6">
+      <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full max-h-full overflow-y-auto">
         <Card>
           <CardHeader className="flex items-center justify-between">
             <h2 className="font-display text-3xl">Round over</h2>

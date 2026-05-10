@@ -42,8 +42,8 @@ export function GameEnd({
   };
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col items-center justify-center px-5 py-8">
-      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full">
+    <main className="mx-auto flex h-dvh max-w-xl flex-col items-center justify-center overflow-hidden px-5 py-6">
+      <motion.div initial={{ y: 12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="w-full max-h-full overflow-y-auto">
         <Card>
           <CardHeader className="flex items-center justify-between">
             <div className="flex items-center gap-2">

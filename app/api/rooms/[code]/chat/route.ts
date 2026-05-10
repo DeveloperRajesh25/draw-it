@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import { adminClient } from '@/lib/supabase/server';
 import { ChatBodySchema } from '@/lib/schemas';
-import { bumpRoomActivity, handleZod, jsonError, loadPlayer, loadRoom, readJson } from '@/lib/api-helpers';
+import { handleZod, jsonError, loadPlayer, loadRoom, readJson } from '@/lib/api-helpers';
 import { isCloseMatch, isExactMatch, normalize } from '@/lib/matching';
 import { guesserPoints } from '@/lib/scoring';
 import { maybeEndDrawingEarly } from '@/lib/transitions';
@@ -18,10 +18,12 @@ export async function POST(
     const body = ChatBodySchema.parse(await readJson(req));
     const sb = adminClient();
 
-    const { room } = await loadRoom(sb, code);
+    // Fetch room and sender in parallel — they're independent reads.
+    const [{ room }, sender] = await Promise.all([
+      loadRoom(sb, code),
+      loadPlayer(sb, code, body.playerId),
+    ]);
     if (!room) return jsonError('Room not found', 404);
-
-    const sender = await loadPlayer(sb, code, body.playerId);
     if (!sender) return jsonError('Not in room', 403);
 
     const text = body.text.trim();
@@ -32,9 +34,7 @@ export async function POST(
       return jsonError('Drawers cannot chat during their turn', 403);
     }
 
-    // Players who have already guessed correctly cannot reveal it in chat.
-    // We let them chat normally though (just a normal message). Filtering
-    // happens client-side based on player_id + correct-guess metadata.
+    const messageId = body.id ?? nanoid();
 
     // Guess matching only applies during the drawing phase, only from non-drawers,
     // and only from players who haven't already guessed correctly.
@@ -45,21 +45,22 @@ export async function POST(
       !sender.hasGuessed
     ) {
       if (isExactMatch(text, room.word)) {
-        // Compute score
-        const { count: correctSoFarRaw } = await sb
-          .from('players')
-          .select('id', { count: 'exact', head: true })
-          .eq('room_code', code)
-          .eq('has_guessed', true);
-        const correctSoFar = correctSoFarRaw ?? 0;
+        // Both counts are independent — fire them in parallel.
+        const [correctSoFarRes, totalGuessersRes] = await Promise.all([
+          sb
+            .from('players')
+            .select('id', { count: 'exact', head: true })
+            .eq('room_code', code)
+            .eq('has_guessed', true),
+          sb
+            .from('players')
+            .select('id', { count: 'exact', head: true })
+            .eq('room_code', code)
+            .neq('id', room.drawerId ?? ''),
+        ]);
+        const correctSoFar = correctSoFarRes.count ?? 0;
         const guessOrder = correctSoFar + 1;
-
-        const totalGuessersRaw = await sb
-          .from('players')
-          .select('id', { count: 'exact', head: true })
-          .eq('room_code', code)
-          .neq('id', room.drawerId ?? '');
-        const totalGuessers = totalGuessersRaw.count ?? 1;
+        const totalGuessers = totalGuessersRes.count ?? 1;
 
         const endsAt = room.phaseEndsAt ? new Date(room.phaseEndsAt).getTime() : Date.now();
         const timeRemaining = Math.max(0, (endsAt - Date.now()) / 1000);
@@ -71,60 +72,77 @@ export async function POST(
           totalGuessers,
         });
 
-        await sb
-          .from('players')
-          .update({
-            has_guessed: true,
-            guess_order: guessOrder,
-            score: sender.score + pts,
-            points_this_round: sender.pointsThisRound + pts,
-          })
-          .eq('room_code', code)
-          .eq('id', sender.id);
+        // Player score update + chat insert are independent — run them concurrently.
+        await Promise.all([
+          sb
+            .from('players')
+            .update({
+              has_guessed: true,
+              guess_order: guessOrder,
+              score: sender.score + pts,
+              points_this_round: sender.pointsThisRound + pts,
+            })
+            .eq('room_code', code)
+            .eq('id', sender.id),
+          sb.from('chat_messages').insert({
+            id: messageId,
+            room_code: code,
+            player_id: sender.id,
+            player_name: sender.name,
+            text: room.word,
+            type: 'correct-guess',
+          }),
+        ]);
 
-        // Insert correct-guess message. Text is the actual word so the
-        // guesser themselves sees it; clients filter to show
-        // "{name} guessed the word!" for everyone else.
-        await sb.from('chat_messages').insert({
-          id: body.id ?? nanoid(),
-          room_code: code,
-          player_id: sender.id,
-          player_name: sender.name,
-          text: room.word,
-          type: 'correct-guess',
+        // Side-effects that don't affect the response: don't await.
+        // The sender's client will broadcast the verdict via Realtime, so
+        // these can run after we return without delaying anyone.
+        void sb
+          .from('rooms')
+          .update({ last_activity_at: new Date().toISOString() })
+          .eq('code', code);
+        void maybeEndDrawingEarly(sb, code);
+
+        return NextResponse.json({
+          ok: true,
+          correct: true,
+          points: pts,
+          messageId,
         });
-
-        await bumpRoomActivity(sb, code);
-        await maybeEndDrawingEarly(sb, code);
-        return NextResponse.json({ ok: true, correct: true, points: pts });
       }
 
       if (isCloseMatch(text, room.word)) {
         await sb.from('chat_messages').insert({
-          id: body.id ?? nanoid(),
+          id: messageId,
           room_code: code,
           player_id: sender.id,
           player_name: sender.name,
           text: text,
           type: 'close-guess',
         });
-        await bumpRoomActivity(sb, code);
-        return NextResponse.json({ ok: true, close: true });
+        void sb
+          .from('rooms')
+          .update({ last_activity_at: new Date().toISOString() })
+          .eq('code', code);
+        return NextResponse.json({ ok: true, close: true, messageId });
       }
     }
 
     // Normal chat. Truncate the visible text to a reasonable length and pass through.
     void normalize; // imported for future profanity work
     await sb.from('chat_messages').insert({
-      id: body.id ?? nanoid(),
+      id: messageId,
       room_code: code,
       player_id: sender.id,
       player_name: sender.name,
       text,
       type: 'normal',
     });
-    await bumpRoomActivity(sb, code);
-    return NextResponse.json({ ok: true });
+    void sb
+      .from('rooms')
+      .update({ last_activity_at: new Date().toISOString() })
+      .eq('code', code);
+    return NextResponse.json({ ok: true, messageId });
   } catch (e) {
     return handleZod(e);
   }

@@ -44,9 +44,9 @@ export function WordPick({
   };
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-3xl flex-col items-center justify-center px-5 py-8">
+    <main className="mx-auto flex h-dvh max-w-3xl flex-col items-center justify-center overflow-hidden px-5 py-6">
       <Card className="w-full">
-        <CardBody className="flex flex-col items-center gap-5 p-8">
+        <CardBody className="flex flex-col items-center gap-5 p-6 sm:p-8">
           <Timer endsAt={room.phaseEndsAt} totalSeconds={TIMING.WORD_PICK_SECONDS} onExpire={onTick} />
           {isDrawer ? (
             <>

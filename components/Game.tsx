@@ -129,9 +129,9 @@ export function Game({
   };
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-2 pb-3 pt-2 sm:px-5 sm:pt-4 sm:pb-4">
+    <main className="mx-auto flex h-dvh w-full max-w-6xl flex-col overflow-hidden px-2 pt-2 pb-2 sm:px-5 sm:pt-3 sm:pb-3">
       {/* Top bar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm sm:gap-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm sm:gap-3">
         <RoomPill code={room.code} className="shrink-0" />
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-xs text-ink-soft sm:inline">
@@ -170,7 +170,7 @@ export function Game({
       </div>
 
       {/* Mobile players strip — horizontal scroll, compact */}
-      <div className="mt-2 lg:hidden">
+      <div className="mt-2 shrink-0 lg:hidden">
         <PlayerList
           players={players}
           drawerId={room.drawerId}
@@ -181,11 +181,11 @@ export function Game({
         />
       </div>
 
-      {/* Body */}
-      <div className="mt-2 grid gap-3 sm:mt-3 lg:grid-cols-[220px_1fr_300px]">
+      {/* Body — mobile: flex column with chat taking remaining height; lg: 3-col grid */}
+      <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 sm:mt-3 sm:gap-3 lg:grid lg:grid-cols-[220px_1fr_300px]">
         {/* Players (desktop only) */}
-        <div className="order-2 hidden lg:order-1 lg:block">
-          <div className="lg:sticky lg:top-3">
+        <div className="hidden lg:order-1 lg:block lg:overflow-y-auto">
+          <div className="lg:sticky lg:top-0">
             <PlayerList
               players={players}
               drawerId={room.drawerId}
@@ -197,7 +197,7 @@ export function Game({
         </div>
 
         {/* Canvas + toolbar */}
-        <div className="order-1 space-y-2 lg:order-2">
+        <div className="flex shrink-0 flex-col gap-2 lg:order-2 lg:min-h-0">
           {canDraw && (
             <Toolbar
               tool={tool}
@@ -210,30 +210,30 @@ export function Game({
               onClear={onClear}
             />
           )}
-          <Canvas
-            roomCode={room.code}
-            strokes={strokes}
-            canDraw={canDraw}
-            tool={tool}
-            color={color}
-            size={size}
-            onCommitStroke={onCommitStroke}
-          />
-        </div>
-
-        {/* Chat */}
-        <div className="order-3">
-          <div className="h-[45dvh] sm:h-[52dvh] lg:h-[68dvh]">
-            <Chat
-              messages={chat}
-              meId={meId}
-              meName={me?.name ?? 'You'}
-              drawerId={room.drawerId}
-              meHasGuessed={!!me?.hasGuessed}
-              canChat={canChat}
+          <div className="canvas-mobile-fit mx-auto w-full">
+            <Canvas
               roomCode={room.code}
+              strokes={strokes}
+              canDraw={canDraw}
+              tool={tool}
+              color={color}
+              size={size}
+              onCommitStroke={onCommitStroke}
             />
           </div>
+        </div>
+
+        {/* Chat — mobile: flex-1 (fills remaining); lg: fixed height */}
+        <div className="min-h-0 flex-1 lg:order-3 lg:h-[68dvh] lg:flex-none">
+          <Chat
+            messages={chat}
+            meId={meId}
+            meName={me?.name ?? 'You'}
+            drawerId={room.drawerId}
+            meHasGuessed={!!me?.hasGuessed}
+            canChat={canChat}
+            roomCode={room.code}
+          />
         </div>
       </div>
     </main>

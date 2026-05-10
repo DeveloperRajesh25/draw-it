@@ -5,9 +5,10 @@ import { browserClient } from './supabase/client';
 import { useRoomStore } from './store';
 import { mapChatRow, mapHintRow, mapPlayerRow, mapRoomRow, mapStrokeRow } from './supabase/mappers';
 import { TIMING } from './constants';
-import type { StrokePreviewSegment } from './types';
+import type { ChatMessage, StrokePreviewSegment } from './types';
 
 const PREVIEW_EVENT = 'stroke-preview';
+const CHAT_EVENT = 'chat-msg';
 
 type PreviewListener = (seg: StrokePreviewSegment) => void;
 
@@ -93,6 +94,19 @@ export function broadcastStrokePreview(code: string, seg: StrokePreviewSegment):
   const ch = channelByCode.get(code);
   if (!ch) return false;
   ch.send({ type: 'broadcast', event: PREVIEW_EVENT, payload: seg });
+  return true;
+}
+
+/**
+ * Broadcast a chat message to every other client in the room. We use this to
+ * fan out chat — and especially the correct-guess "verdict" — without waiting
+ * on Postgres CDC (~hundreds of ms). Receivers upsert by id, so the canonical
+ * row that arrives later via postgres_changes is a no-op.
+ */
+export function broadcastChat(code: string, msg: ChatMessage): boolean {
+  const ch = channelByCode.get(code);
+  if (!ch) return false;
+  ch.send({ type: 'broadcast', event: CHAT_EVENT, payload: msg });
   return true;
 }
 
@@ -237,6 +251,10 @@ export function useRoom(code: string, playerId: string) {
         )
         .on('broadcast', { event: PREVIEW_EVENT }, ({ payload }) => {
           if (payload) emitPreview(code, payload as StrokePreviewSegment);
+        })
+        .on('broadcast', { event: CHAT_EVENT }, ({ payload }) => {
+          if (!payload) return;
+          appendChat(payload as ChatMessage);
         })
         .on('presence', { event: 'sync' }, () => {
           const stateMap = channel.presenceState() as Record<string, unknown>;

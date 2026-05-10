@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { CHAT_MAX_LENGTH } from '@/lib/constants';
 import type { ChatMessage } from '@/lib/types';
 import { useRoomStore } from '@/lib/store';
+import { broadcastChat } from '@/lib/use-room';
 
 type Props = {
   messages: ChatMessage[];
@@ -30,7 +31,7 @@ type Props = {
  *   4. On non-OK response we roll back the optimistic message.
  */
 export function Chat(props: Props) {
-  const { messages, meId, meName, canChat, roomCode } = props;
+  const { messages, meId, meName, canChat, meHasGuessed, roomCode } = props;
   const listRef = React.useRef<HTMLUListElement>(null);
   const [text, setText] = React.useState('');
   const appendChat = useRoomStore((s) => s.appendChat);
@@ -57,6 +58,15 @@ export function Chat(props: Props) {
       createdAt: new Date().toISOString(),
     };
     appendChat(optimistic);
+    // Anti-spoiler: if the sender hasn't guessed yet, this message could BE
+    // the answer — broadcasting it to everyone as 'normal' would briefly
+    // reveal the word. Wait for the server verdict before fanning out.
+    // Players who have already guessed correctly can chat freely (they can't
+    // reveal anything new), so we broadcast immediately for them.
+    const safeToFanOutImmediately = meHasGuessed;
+    if (safeToFanOutImmediately) {
+      broadcastChat(roomCode, optimistic);
+    }
     setText('');
     void (async () => {
       try {
@@ -69,16 +79,16 @@ export function Chat(props: Props) {
           removeChat(id);
           return;
         }
-        // Optimistically reflect the server's verdict so the sender sees the
-        // green/yellow line immediately — no waiting on Realtime CDC. The
-        // server-issued row will arrive shortly and upsert by id (same data,
-        // so visually a no-op).
         const j = (await res.json().catch(() => ({}))) as {
           correct?: boolean;
           close?: boolean;
         };
+        // Sender renders the verdict instantly. We also broadcast the canonical
+        // message so every other client renders it at the same time — no CDC
+        // wait. The DB row arriving via postgres_changes later upserts by id
+        // and is a visual no-op.
         if (j.correct) {
-          appendChat({
+          const upgraded: ChatMessage = {
             id,
             roomCode,
             playerId: meId,
@@ -86,9 +96,11 @@ export function Chat(props: Props) {
             text: value,
             type: 'correct-guess',
             createdAt: optimistic.createdAt,
-          });
+          };
+          appendChat(upgraded);
+          broadcastChat(roomCode, upgraded);
         } else if (j.close) {
-          appendChat({
+          const upgraded: ChatMessage = {
             id,
             roomCode,
             playerId: meId,
@@ -96,7 +108,15 @@ export function Chat(props: Props) {
             text: value,
             type: 'close-guess',
             createdAt: optimistic.createdAt,
-          });
+          };
+          appendChat(upgraded);
+          // close-guess is filtered to sender-only on receivers — no need to
+          // broadcast it to others.
+        } else if (!safeToFanOutImmediately) {
+          // We held back the optimistic broadcast because the sender hadn't
+          // guessed yet. Now that the server has confirmed it's a normal
+          // message (not the word), fan it out to everyone else.
+          broadcastChat(roomCode, optimistic);
         }
       } catch {
         removeChat(id);
