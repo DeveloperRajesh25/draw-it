@@ -19,7 +19,7 @@ type Props = {
 export function Toolbar(props: Props) {
   return (
     <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm">
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1 sm:gap-1.5">
         {COLORS.map((c) => {
           const sel = c === props.color;
           return (
@@ -29,7 +29,7 @@ export function Toolbar(props: Props) {
               aria-label={`Color ${c}`}
               onClick={() => props.onColor(c)}
               className={cn(
-                'press-doodle h-6 w-6 rounded-md border-2 border-ink',
+                'press-doodle h-7 w-7 rounded-md border-2 border-ink sm:h-6 sm:w-6',
                 sel && 'ring-2 ring-coral ring-offset-1 ring-offset-paper',
               )}
               style={{ background: c }}
@@ -37,7 +37,7 @@ export function Toolbar(props: Props) {
           );
         })}
       </div>
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
         <ToolBtn label="Brush" active={props.tool === 'brush'} onClick={() => props.onTool('brush')}>
           <Brush className="h-4 w-4" />
         </ToolBtn>

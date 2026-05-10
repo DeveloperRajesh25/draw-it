@@ -116,7 +116,7 @@ export async function POST(
     // Normal chat. Truncate the visible text to a reasonable length and pass through.
     void normalize; // imported for future profanity work
     await sb.from('chat_messages').insert({
-      id: nanoid(),
+      id: body.id ?? nanoid(),
       room_code: code,
       player_id: sender.id,
       player_name: sender.name,

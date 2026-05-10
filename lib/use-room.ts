@@ -42,6 +42,49 @@ export function subscribeStrokePreviews(code: string, fn: PreviewListener) {
   return addPreviewListener(code, fn);
 }
 
+// Per-room dedupe so multiple components can request a refetch in the same tick.
+const refetchInFlight = new Map<string, Promise<void>>();
+const refetchLastAt = new Map<string, number>();
+
+/**
+ * Pull a fresh snapshot from /api/rooms/[code] and push it into the store.
+ * Used to bypass Realtime CDC latency right after a known-good server mutation
+ * (start game, tick, etc) — so the local UI advances immediately instead of
+ * waiting on Postgres → Supabase Realtime → WebSocket → client.
+ *
+ * Coalesces concurrent calls and rate-limits to ~1 every 200ms per room.
+ */
+export async function refetchRoomSnapshot(code: string, playerId: string): Promise<void> {
+  if (!code || !playerId) return;
+  const existing = refetchInFlight.get(code);
+  if (existing) return existing;
+
+  const last = refetchLastAt.get(code) ?? 0;
+  const sinceLast = Date.now() - last;
+  if (sinceLast < 200) return;
+
+  const p = (async () => {
+    try {
+      const res = await fetch(
+        `/api/rooms/${encodeURIComponent(code)}?playerId=${encodeURIComponent(playerId)}`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) return;
+      const snap = await res.json();
+      const store = useRoomStore.getState();
+      store.setState(snap);
+      store.setStrokes(snap.strokes);
+    } catch {
+      /* ignore */
+    } finally {
+      refetchLastAt.set(code, Date.now());
+      refetchInFlight.delete(code);
+    }
+  })();
+  refetchInFlight.set(code, p);
+  return p;
+}
+
 /**
  * Broadcast a live preview segment from the drawer to all viewers.
  * Returns true if the channel was ready, false otherwise (caller may buffer).

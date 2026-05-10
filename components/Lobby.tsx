@@ -10,6 +10,7 @@ import { RoomPill } from './RoomPill';
 import type { Player, Room, RoomSettings, WordMode } from '@/lib/types';
 import { SETTINGS_LIMITS } from '@/lib/constants';
 import { leaveRoom } from '@/lib/leave';
+import { refetchRoomSnapshot } from '@/lib/use-room';
 
 type Props = {
   room: Room;
@@ -37,9 +38,18 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: meId }),
       });
-      const j = await res.json();
-      if (!res.ok) setError(j.error ?? 'Could not start');
-    } finally {
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setError(j.error ?? 'Could not start');
+        setBusy(false);
+        return;
+      }
+      // Server has already advanced phase to 'word-pick'. Pull the new snapshot
+      // immediately so we don't wait on Realtime CDC. Keep busy=true — this
+      // component will unmount when phase changes.
+      await refetchRoomSnapshot(room.code, meId);
+    } catch {
+      setError('Could not start');
       setBusy(false);
     }
   };

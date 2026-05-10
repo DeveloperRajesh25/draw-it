@@ -5,6 +5,8 @@ import type { Player } from '@/lib/types';
 import { ConnectionDot } from './ConnectionDot';
 import { AvatarSvg } from './AvatarPicker';
 
+type Variant = 'list' | 'strip';
+
 export function PlayerList({
   players,
   drawerId,
@@ -13,6 +15,7 @@ export function PlayerList({
   connectedIds,
   onKick,
   kickingId,
+  variant = 'list',
 }: {
   players: Player[];
   drawerId: string | null;
@@ -21,8 +24,54 @@ export function PlayerList({
   connectedIds: Set<string>;
   onKick?: (id: string) => void;
   kickingId?: string | null;
+  variant?: Variant;
 }) {
   const sorted = [...players].sort((a, b) => b.score - a.score);
+
+  if (variant === 'strip') {
+    return (
+      <ul className="scrollbar-doodle flex gap-2 overflow-x-auto pb-1">
+        {sorted.map((p, i) => {
+          const isMe = p.id === meId;
+          const isHost = p.id === hostId;
+          const isDrawer = p.id === drawerId;
+          return (
+            <li
+              key={p.id}
+              className={cn(
+                'flex shrink-0 items-center gap-2 rounded-lg border-2 border-ink bg-paper px-2 py-1.5 shadow-doodle-sm',
+                isDrawer && 'bg-mustard',
+                p.hasGuessed && !isDrawer && 'bg-mint/60',
+                !p.connected && 'opacity-60',
+              )}
+            >
+              <span className="font-mono text-[11px] text-ink-soft">#{i + 1}</span>
+              <div className="rounded-full border-2 border-ink bg-paper-dark p-0.5">
+                <AvatarSvg avatar={p.avatar} size={22} />
+              </div>
+              <div className="flex min-w-0 flex-col leading-tight">
+                <div className="flex items-center gap-1">
+                  <span className="max-w-22 truncate text-xs font-semibold">
+                    {p.name}
+                    {isMe && <span className="ml-0.5 text-ink-faint">(you)</span>}
+                  </span>
+                  {isHost && <Crown className="h-3 w-3 text-mustard" aria-label="Host" />}
+                  {isDrawer && <Pencil className="h-3 w-3" aria-label="Drawing" />}
+                </div>
+                <span className="text-[10px] tabular-nums text-ink-soft">
+                  {p.score} pts
+                  {p.pointsThisRound > 0 && (
+                    <span className="ml-1 text-[hsl(140_60%_30%)]">+{p.pointsThisRound}</span>
+                  )}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
   return (
     <ul className="flex flex-col gap-2">
       {sorted.map((p, i) => {
@@ -36,7 +85,7 @@ export function PlayerList({
             className={cn(
               'flex items-center gap-3 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm',
               isDrawer && 'bg-mustard',
-              p.hasGuessed && !isDrawer && 'bg-mint/40',
+              p.hasGuessed && !isDrawer && 'bg-mint/60',
               !p.connected && 'opacity-60',
             )}
           >

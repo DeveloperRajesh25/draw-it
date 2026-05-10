@@ -25,7 +25,7 @@ export function WordPattern({
   const revealMap = new Map(reveals.map((r) => [r.letterIndex, r.letter]));
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-1 font-display text-3xl tracking-wide text-ink">
+    <div className="flex flex-wrap items-center justify-center gap-1 font-display text-xl tracking-wide text-ink sm:text-3xl">
       {Array.from(display).map((ch, i) => {
         if (ch === ' ') return <span key={i} className="w-3" aria-hidden="true" />;
         const revealed = isDrawer || ch !== '_' || revealMap.has(i);
@@ -43,7 +43,7 @@ export function WordPattern({
         );
       })}
       {!isDrawer && pattern && (
-        <span className="ml-2 text-sm text-ink-soft">
+        <span className="ml-2 hidden text-sm text-ink-soft sm:inline">
           {Array.from(pattern).filter((c) => c !== ' ' && c !== '?').length} letters
         </span>
       )}

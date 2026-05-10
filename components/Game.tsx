@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, MessageSquare } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { Canvas } from './Canvas';
 import { Chat } from './Chat';
 import { PlayerList } from './PlayerList';
@@ -39,7 +39,6 @@ export function Game({
 }: Props) {
   const router = useRouter();
   const me = players.find((p) => p.id === meId);
-  const drawer = players.find((p) => p.id === room.drawerId) ?? null;
   const isDrawer = room.drawerId === meId;
   const canDraw = isDrawer && room.phase === 'drawing';
   const canChat = !!me && (!isDrawer || room.phase !== 'drawing');
@@ -47,7 +46,6 @@ export function Game({
   const [tool, setTool] = React.useState<Tool>('brush');
   const [color, setColor] = React.useState<string>(COLORS[1]); // default black
   const [size, setSize] = React.useState<number>(BRUSH_SIZES[1]);
-  const [chatOpenMobile, setChatOpenMobile] = React.useState(false);
 
   // Last reveal-hint trigger to debounce
   const lastRevealKey = React.useRef<string>('');
@@ -67,16 +65,9 @@ export function Game({
     firstSeed = false;
   }, [chat]);
 
-  // Watch for hint reveals: any client whose local timer crosses a scheduled reveal
-  // calls /reveal-hint. The server is the source of truth and dedupes via optimistic
-  // locking; we just need to nudge it when the time passes.
   React.useEffect(() => {
     if (room.phase !== 'drawing') return;
     const id = setInterval(() => {
-      // We don't have the schedule on the client (server hides it). Instead: if
-      // the elapsed fraction has crossed a hint boundary that the server hasn't
-      // revealed yet, nudge it. Cheap heuristic: poke once per second when in
-      // drawing phase and let the server decide whether to act.
       const key = `${room.round}-${room.turnInRound}-${Math.floor(Date.now() / 5000)}`;
       if (key === lastRevealKey.current) return;
       lastRevealKey.current = key;
@@ -138,12 +129,12 @@ export function Game({
   };
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-3 pb-4 pt-3 sm:px-5 sm:pt-4">
+    <main className="mx-auto w-full max-w-6xl px-2 pb-3 pt-2 sm:px-5 sm:pt-4 sm:pb-4">
       {/* Top bar */}
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm sm:gap-3">
         <RoomPill code={room.code} className="shrink-0" />
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-xs text-ink-soft hidden sm:inline">
+          <span className="hidden text-xs text-ink-soft sm:inline">
             Round {room.round}/{room.settings.rounds}
           </span>
           <Timer
@@ -152,14 +143,6 @@ export function Game({
             onExpire={onTick}
           />
           <SoundToggle />
-          <button
-            type="button"
-            className="press-doodle inline-flex h-9 w-9 items-center justify-center rounded-md border-2 border-ink bg-paper-dark sm:hidden"
-            aria-label="Toggle chat"
-            onClick={() => setChatOpenMobile((v) => !v)}
-          >
-            <MessageSquare className="h-4 w-4" />
-          </button>
           <Button
             size="sm"
             variant="ghost"
@@ -172,19 +155,36 @@ export function Game({
           </Button>
         </div>
         <div className="basis-full">
-          <WordPattern
-            pattern={room.wordPattern}
-            reveals={hintReveals}
-            isDrawer={isDrawer}
-            word={room.word}
-          />
+          <div className="flex items-center justify-center gap-2">
+            <span className="text-[11px] uppercase tracking-wider text-ink-soft sm:hidden">
+              R{room.round}/{room.settings.rounds}
+            </span>
+            <WordPattern
+              pattern={room.wordPattern}
+              reveals={hintReveals}
+              isDrawer={isDrawer}
+              word={room.word}
+            />
+          </div>
         </div>
       </div>
 
+      {/* Mobile players strip — horizontal scroll, compact */}
+      <div className="mt-2 lg:hidden">
+        <PlayerList
+          players={players}
+          drawerId={room.drawerId}
+          hostId={room.hostId}
+          meId={meId}
+          connectedIds={connectedIds}
+          variant="strip"
+        />
+      </div>
+
       {/* Body */}
-      <div className="mt-3 grid gap-3 lg:grid-cols-[220px_1fr_300px]">
-        {/* Players */}
-        <div className="order-2 lg:order-1">
+      <div className="mt-2 grid gap-3 sm:mt-3 lg:grid-cols-[220px_1fr_300px]">
+        {/* Players (desktop only) */}
+        <div className="order-2 hidden lg:order-1 lg:block">
           <div className="lg:sticky lg:top-3">
             <PlayerList
               players={players}
@@ -197,7 +197,7 @@ export function Game({
         </div>
 
         {/* Canvas + toolbar */}
-        <div className="order-1 lg:order-2 space-y-2">
+        <div className="order-1 space-y-2 lg:order-2">
           {canDraw && (
             <Toolbar
               tool={tool}
@@ -222,8 +222,8 @@ export function Game({
         </div>
 
         {/* Chat */}
-        <div className={`order-3 ${chatOpenMobile ? '' : 'hidden'} lg:block`}>
-          <div className="h-[60dvh] lg:h-[68dvh]">
+        <div className="order-3">
+          <div className="h-[45dvh] sm:h-[52dvh] lg:h-[68dvh]">
             <Chat
               messages={chat}
               meId={meId}

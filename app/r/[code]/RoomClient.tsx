@@ -12,7 +12,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { isValidRoomCode } from '@/lib/room-code';
 import { getOrCreatePlayer, getSession, setSession } from '@/lib/identity';
 import { useRoomStore } from '@/lib/store';
-import { useRoom } from '@/lib/use-room';
+import { refetchRoomSnapshot, useRoom } from '@/lib/use-room';
 import { sfx } from '@/lib/sound';
 
 type Phase = 'boot' | 'rejoining' | 'joining' | 'in-room' | 'missing';
@@ -156,6 +156,11 @@ function RoomShell({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId }),
     })
+      .then(async () => {
+        // Server may have advanced the phase. Pull the new snapshot now —
+        // don't wait for Postgres CDC + Realtime fanout (~hundreds of ms).
+        await refetchRoomSnapshot(code, playerId);
+      })
       .catch(() => {/* ignore */})
       .finally(() => {
         tickInFlight.current = false;

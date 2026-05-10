@@ -3,7 +3,6 @@ import * as React from 'react';
 import { Send } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
-import { Input } from './ui/Input';
 import { CHAT_MAX_LENGTH } from '@/lib/constants';
 import type { ChatMessage } from '@/lib/types';
 import { useRoomStore } from '@/lib/store';
@@ -29,13 +28,6 @@ type Props = {
  *      an exact/close guess). The Realtime echo arrives within ~100ms and
  *      the store upserts by id — replacing our optimistic copy in place.
  *   4. On non-OK response we roll back the optimistic message.
- *
- * Visibility rules:
- *   - 'normal'              — visible to everyone (drawer's chat is rejected server-side).
- *   - 'system'/'join'/'leave' — visible to everyone.
- *   - 'correct-guess'       — sender sees the actual word; everyone else sees
- *                             a generic "Name guessed the word!" notice.
- *   - 'close-guess'         — only visible to the sender.
  */
 export function Chat(props: Props) {
   const { messages, meId, meName, canChat, roomCode } = props;
@@ -66,8 +58,6 @@ export function Chat(props: Props) {
     };
     appendChat(optimistic);
     setText('');
-    // Fire and (best-effort) handle errors. We intentionally don't await —
-    // the optimistic UI is already up-to-date and the user can keep typing.
     void (async () => {
       try {
         const res = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/chat`, {
@@ -77,6 +67,36 @@ export function Chat(props: Props) {
         });
         if (!res.ok) {
           removeChat(id);
+          return;
+        }
+        // Optimistically reflect the server's verdict so the sender sees the
+        // green/yellow line immediately — no waiting on Realtime CDC. The
+        // server-issued row will arrive shortly and upsert by id (same data,
+        // so visually a no-op).
+        const j = (await res.json().catch(() => ({}))) as {
+          correct?: boolean;
+          close?: boolean;
+        };
+        if (j.correct) {
+          appendChat({
+            id,
+            roomCode,
+            playerId: meId,
+            playerName: meName || 'You',
+            text: value,
+            type: 'correct-guess',
+            createdAt: optimistic.createdAt,
+          });
+        } else if (j.close) {
+          appendChat({
+            id,
+            roomCode,
+            playerId: meId,
+            playerName: meName || 'You',
+            text: value,
+            type: 'close-guess',
+            createdAt: optimistic.createdAt,
+          });
         }
       } catch {
         removeChat(id);
@@ -85,34 +105,33 @@ export function Chat(props: Props) {
   };
 
   return (
-    <div className="flex h-full flex-col rounded-lg border-2 border-ink bg-paper shadow-doodle-sm">
-      <div className="border-b-2 border-ink px-3 py-2 text-sm font-semibold text-ink-soft">Chat</div>
+    <div className="flex h-full flex-col overflow-hidden rounded-lg border-2 border-ink bg-paper shadow-doodle-sm">
       <ul
         ref={listRef}
-        className="scrollbar-doodle flex-1 space-y-1.5 overflow-y-auto px-3 py-2 text-sm"
+        className="scrollbar-doodle min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2 text-sm sm:px-3"
       >
         {messages.map((m) => (
           <ChatLine key={m.id} m={m} meId={meId} />
         ))}
       </ul>
-      <form onSubmit={send} className="border-t-2 border-ink p-2">
-        <div className="flex gap-2">
-          <Input
+      <form onSubmit={send} className="border-t-2 border-ink bg-paper-dark p-2">
+        <div className="flex items-center gap-2">
+          <input
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
-            placeholder={canChat ? 'Type a guess…' : 'Chat is locked'}
+            placeholder={canChat ? 'Type your guess here...' : 'Chat is locked'}
             disabled={!canChat}
             inputMode="text"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
             enterKeyHint="send"
-            className="h-10"
+            className="h-10 min-w-0 flex-1 rounded-md border-2 border-ink bg-paper px-3 text-sm text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-coral disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!canChat || !text.trim()}
-            className="press-doodle inline-flex h-10 w-10 items-center justify-center rounded-md border-2 border-ink bg-ink text-paper disabled:opacity-50"
+            className="press-doodle inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border-2 border-ink bg-ink text-paper disabled:opacity-50"
             aria-label="Send"
           >
             <Send className="h-4 w-4" />

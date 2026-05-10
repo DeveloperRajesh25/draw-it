@@ -6,6 +6,7 @@ import { Card, CardBody } from './ui/Card';
 import { Timer } from './Timer';
 import type { Player, Room } from '@/lib/types';
 import { TIMING } from '@/lib/constants';
+import { refetchRoomSnapshot } from '@/lib/use-room';
 
 export function WordPick({
   room,
@@ -26,16 +27,20 @@ export function WordPick({
     if (!isDrawer || busy) return;
     setPickedIdx(idx);
     try {
-      await fetch(`/api/rooms/${room.code}/select-word`, {
+      const res = await fetch(`/api/rooms/${room.code}/select-word`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: meId, wordIndex: idx }),
       });
+      if (res.ok) {
+        // Don't wait for Realtime CDC — pull the new 'drawing' state now.
+        await refetchRoomSnapshot(room.code, meId);
+      } else {
+        setPickedIdx(null);
+      }
     } catch {
       setPickedIdx(null);
     }
-    // On success the room phase transitions to 'drawing' and this component
-    // unmounts. No need to clear pickedIdx in the success path.
   };
 
   return (

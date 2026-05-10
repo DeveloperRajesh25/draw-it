@@ -1,5 +1,7 @@
 'use client';
+import * as React from 'react';
 import { motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 import { Card, CardBody, CardHeader } from './ui/Card';
 import { Timer } from './Timer';
 import type { Player, Room } from '@/lib/types';
@@ -16,6 +18,19 @@ export function RoundEnd({
   onTick: () => void;
 }) {
   const sorted = [...players].sort((a, b) => b.pointsThisRound - a.pointsThisRound);
+
+  // Tracks whether the local clock has crossed phase_ends_at — used to show
+  // a "Next round starting…" hint while the server-side transition lands.
+  const [pastDue, setPastDue] = React.useState(false);
+  React.useEffect(() => {
+    setPastDue(false);
+    if (!room.phaseEndsAt) return;
+    const id = setInterval(() => {
+      setPastDue(new Date(room.phaseEndsAt!).getTime() <= Date.now());
+    }, 250);
+    return () => clearInterval(id);
+  }, [room.phaseEndsAt]);
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col items-center justify-center px-5 py-8">
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="w-full">
@@ -46,6 +61,12 @@ export function RoundEnd({
                 </li>
               ))}
             </ul>
+            {pastDue && (
+              <div className="flex items-center justify-center gap-2 text-sm text-ink-soft">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Starting next round…</span>
+              </div>
+            )}
           </CardBody>
         </Card>
       </motion.div>
