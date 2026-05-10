@@ -121,13 +121,19 @@ export function Game({
     });
   };
 
+  const [leaving, setLeaving] = React.useState(false);
   const leave = async () => {
+    if (leaving) return;
+    setLeaving(true);
     const { ok } = await leaveRoom({
       code: room.code,
       playerId: meId,
       totalPlayers: players.length,
     });
-    if (!ok) return;
+    if (!ok) {
+      setLeaving(false);
+      return;
+    }
     router.push('/');
   };
 
@@ -154,8 +160,15 @@ export function Game({
           >
             <MessageSquare className="h-4 w-4" />
           </button>
-          <Button size="sm" variant="ghost" onClick={leave} aria-label="Leave">
-            <LogOut className="h-4 w-4" />
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={leave}
+            disabled={leaving}
+            loading={leaving}
+            aria-label="Leave"
+          >
+            {!leaving && <LogOut className="h-4 w-4" />}
           </Button>
         </div>
         <div className="basis-full">
@@ -214,6 +227,7 @@ export function Game({
             <Chat
               messages={chat}
               meId={meId}
+              meName={me?.name ?? 'You'}
               drawerId={room.drawerId}
               meHasGuessed={!!me?.hasGuessed}
               canChat={canChat}

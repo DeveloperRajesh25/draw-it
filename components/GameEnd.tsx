@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Trophy } from 'lucide-react';
 import { Button } from './ui/Button';
@@ -22,14 +23,22 @@ export function GameEnd({
   const sorted = [...players].sort((a, b) => b.score - a.score);
   const isHost = room.hostId === meId;
 
+  const [busy, setBusy] = useState(false);
+
   const playAgain = async () => {
-    if (!isHost) return;
-    // Force the lobby transition immediately, no need to wait for the timer.
-    await fetch(`/api/rooms/${room.code}/tick`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: meId }),
-    });
+    if (!isHost || busy) return;
+    setBusy(true);
+    try {
+      // Force the lobby transition immediately, no need to wait for the timer.
+      await fetch(`/api/rooms/${room.code}/tick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: meId }),
+      });
+    } finally {
+      // The phase transitions back to 'lobby' and this component unmounts;
+      // we keep `busy` true so the button never re-enables before unmount.
+    }
   };
 
   return (
@@ -59,7 +68,11 @@ export function GameEnd({
               ))}
             </ul>
             <div className="flex justify-end">
-              {isHost && <Button onClick={playAgain}>Play again</Button>}
+              {isHost && (
+                <Button onClick={playAgain} disabled={busy} loading={busy}>
+                  {busy ? 'Resetting…' : 'Play again'}
+                </Button>
+              )}
             </div>
           </CardBody>
         </Card>

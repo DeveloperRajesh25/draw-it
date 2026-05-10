@@ -23,6 +23,8 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
   const isHost = room.hostId === meId;
   const me = players.find((p) => p.id === meId);
   const [busy, setBusy] = React.useState(false);
+  const [leaving, setLeaving] = React.useState(false);
+  const [kickingId, setKickingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [showSettings, setShowSettings] = React.useState(false);
 
@@ -43,21 +45,32 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
   };
 
   const leave = async () => {
+    if (leaving) return;
+    setLeaving(true);
     const { ok } = await leaveRoom({
       code: room.code,
       playerId: meId,
       totalPlayers: players.length,
     });
-    if (!ok) return;
+    if (!ok) {
+      setLeaving(false);
+      return;
+    }
     router.push('/');
   };
 
   const kick = async (id: string) => {
-    await fetch(`/api/rooms/${room.code}/kick`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: meId, targetId: id }),
-    });
+    if (kickingId) return;
+    setKickingId(id);
+    try {
+      await fetch(`/api/rooms/${room.code}/kick`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId: meId, targetId: id }),
+      });
+    } finally {
+      setKickingId(null);
+    }
   };
 
   return (
@@ -85,6 +98,7 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
                 meId={meId}
                 connectedIds={connectedIds}
                 onKick={isHost ? kick : undefined}
+                kickingId={kickingId}
               />
             </CardBody>
           </Card>
@@ -92,15 +106,21 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
           <Card>
             <CardBody className="flex flex-wrap items-center gap-3">
               {isHost ? (
-                <Button onClick={startGame} disabled={busy || players.length < 2} size="lg" variant="accent">
-                  <Play className="h-4 w-4" />
-                  {players.length < 2 ? 'Need 2+ players' : 'Start game'}
+                <Button
+                  onClick={startGame}
+                  disabled={busy || players.length < 2}
+                  loading={busy}
+                  size="lg"
+                  variant="accent"
+                >
+                  {!busy && <Play className="h-4 w-4" />}
+                  {busy ? 'Starting…' : players.length < 2 ? 'Need 2+ players' : 'Start game'}
                 </Button>
               ) : (
                 <p className="text-sm text-ink-soft">Waiting for the host to start…</p>
               )}
-              <Button variant="ghost" onClick={leave}>
-                Leave
+              <Button variant="ghost" onClick={leave} disabled={leaving} loading={leaving}>
+                {leaving ? 'Leaving…' : 'Leave'}
               </Button>
               {error && <span className="text-sm text-[hsl(0_70%_45%)]">{error}</span>}
             </CardBody>

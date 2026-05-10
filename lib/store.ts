@@ -9,6 +9,7 @@ type Store = {
   upsertPlayer: (p: Player) => void;
   removePlayer: (id: string) => void;
   appendChat: (m: ChatMessage) => void;
+  removeChat: (id: string) => void;
   appendStroke: (s: Stroke) => void;
   removeStroke: (id: string) => void;
   appendHint: (h: HintReveal) => void;
@@ -42,9 +43,23 @@ export const useRoomStore = create<Store>((set) => ({
   appendChat: (m) =>
     set((cur) => {
       if (!cur.state) return cur;
-      if (cur.state.chat.some((x) => x.id === m.id)) return cur;
+      // Upsert by id. The client may have inserted an optimistic copy with the
+      // same id; the canonical row from Realtime replaces it in place,
+      // preserving its position in the list.
+      const idx = cur.state.chat.findIndex((x) => x.id === m.id);
+      if (idx >= 0) {
+        const chat = cur.state.chat.slice();
+        chat[idx] = m;
+        return { state: { ...cur.state, chat } };
+      }
       return { state: { ...cur.state, chat: [...cur.state.chat, m] } };
     }),
+  removeChat: (id) =>
+    set((cur) =>
+      cur.state
+        ? { state: { ...cur.state, chat: cur.state.chat.filter((m) => m.id !== id) } }
+        : cur,
+    ),
   appendStroke: (s) =>
     set((cur) => {
       if (!cur.state) return cur;

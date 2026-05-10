@@ -18,7 +18,7 @@ export default function HomeClient() {
   const [code, setCode] = useState('');
   const [pickingAvatar, setPickingAvatar] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'create' | 'join' | null>(null);
+  const [busy, setBusy] = useState<'create' | 'join' | 'rejoin' | null>(null);
 
   useEffect(() => {
     const p = getOrCreatePlayer();
@@ -102,7 +102,16 @@ export default function HomeClient() {
                 You were in room <span className="font-mono">{session.roomCode}</span>.
               </p>
             </div>
-            <Button onClick={() => router.push(`/r/${session.roomCode}`)}>Rejoin</Button>
+            <Button
+              onClick={() => {
+                setBusy('rejoin');
+                router.push(`/r/${session.roomCode}`);
+              }}
+              disabled={!!busy}
+              loading={busy === 'rejoin'}
+            >
+              {busy === 'rejoin' ? 'Reconnecting…' : 'Rejoin'}
+            </Button>
           </CardBody>
         </Card>
       )}
@@ -152,7 +161,7 @@ export default function HomeClient() {
             <p className="text-sm text-ink-soft">
               Get a 6-character code and share the link.
             </p>
-            <Button onClick={create} disabled={!!busy} size="lg" variant="accent">
+            <Button onClick={create} disabled={!!busy} loading={busy === 'create'} size="lg" variant="accent">
               {busy === 'create' ? 'Creating…' : 'Create Room'}
             </Button>
           </CardBody>
@@ -172,8 +181,8 @@ export default function HomeClient() {
                 spellCheck={false}
                 className="font-mono tracking-[0.3em]"
               />
-              <Button onClick={join} disabled={!!busy || code.length !== 6} size="lg">
-                Join
+              <Button onClick={join} disabled={!!busy || code.length !== 6} loading={busy === 'join'} size="lg">
+                {busy === 'join' ? 'Joining…' : 'Join'}
               </Button>
             </div>
           </CardBody>

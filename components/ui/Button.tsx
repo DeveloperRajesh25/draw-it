@@ -1,5 +1,6 @@
 'use client';
 import * as React from 'react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'accent';
@@ -8,6 +9,12 @@ type Size = 'sm' | 'md' | 'lg';
 export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
   size?: Size;
+  /**
+   * When true, renders a spinner in place of the children's icon-side and
+   * disables the button. Use this for any async user action so the press
+   * registers visually even before the server responds.
+   */
+  loading?: boolean;
 };
 
 const variants: Record<Variant, string> = {
@@ -28,19 +35,38 @@ const sizes: Record<Size, string> = {
   lg: 'h-14 px-7 text-lg rounded-xl',
 };
 
+const spinnerSize: Record<Size, string> = {
+  sm: 'h-3.5 w-3.5',
+  md: 'h-4 w-4',
+  lg: 'h-5 w-5',
+};
+
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', size = 'md', ...props }, ref) => {
+  ({ className, variant = 'primary', size = 'md', loading, disabled, children, ...props }, ref) => {
+    const isDisabled = !!loading || !!disabled;
     return (
       <button
         ref={ref}
+        disabled={isDisabled}
+        aria-busy={loading || undefined}
         className={cn(
-          'press-doodle inline-flex select-none items-center justify-center gap-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50',
+          'press-doodle relative inline-flex select-none items-center justify-center gap-2 font-semibold transition disabled:cursor-not-allowed disabled:opacity-60',
           variants[variant],
           sizes[size],
           className,
         )}
         {...props}
-      />
+      >
+        {loading && (
+          <Loader2
+            className={cn('animate-spin', spinnerSize[size])}
+            aria-hidden="true"
+          />
+        )}
+        <span className={cn('inline-flex items-center gap-2', loading && 'opacity-90')}>
+          {children}
+        </span>
+      </button>
     );
   },
 );

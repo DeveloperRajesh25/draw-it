@@ -1,8 +1,8 @@
 'use client';
 import * as React from 'react';
 import { motion } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 import { Card, CardBody } from './ui/Card';
-import { Button } from './ui/Button';
 import { Timer } from './Timer';
 import type { Player, Room } from '@/lib/types';
 import { TIMING } from '@/lib/constants';
@@ -19,20 +19,23 @@ export function WordPick({
   onTick: () => void;
 }) {
   const isDrawer = room.drawerId === meId;
-  const [busy, setBusy] = React.useState(false);
+  const [pickedIdx, setPickedIdx] = React.useState<number | null>(null);
+  const busy = pickedIdx !== null;
 
   const select = async (idx: number) => {
     if (!isDrawer || busy) return;
-    setBusy(true);
+    setPickedIdx(idx);
     try {
       await fetch(`/api/rooms/${room.code}/select-word`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId: meId, wordIndex: idx }),
       });
-    } finally {
-      setBusy(false);
+    } catch {
+      setPickedIdx(null);
     }
+    // On success the room phase transitions to 'drawing' and this component
+    // unmounts. No need to clear pickedIdx in the success path.
   };
 
   return (
@@ -44,20 +47,33 @@ export function WordPick({
             <>
               <h2 className="font-display text-3xl text-ink">Pick a word</h2>
               <div className="grid w-full gap-3 sm:grid-cols-3">
-                {(room.wordOptions ?? []).map((w, i) => (
-                  <motion.button
-                    key={w + i}
-                    initial={{ y: 8, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    type="button"
-                    onClick={() => select(i)}
-                    disabled={busy}
-                    className="press-doodle rounded-xl border-2 border-ink bg-paper-dark px-4 py-6 text-center font-display text-2xl shadow-doodle hover:bg-mustard"
-                  >
-                    {w}
-                  </motion.button>
-                ))}
+                {(room.wordOptions ?? []).map((w, i) => {
+                  const isPicked = pickedIdx === i;
+                  return (
+                    <motion.button
+                      key={w + i}
+                      initial={{ y: 8, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      transition={{ delay: i * 0.05 }}
+                      type="button"
+                      onClick={() => select(i)}
+                      disabled={busy}
+                      aria-busy={isPicked || undefined}
+                      className={`press-doodle relative rounded-xl border-2 border-ink px-4 py-6 text-center font-display text-2xl shadow-doodle transition ${
+                        isPicked
+                          ? 'bg-mustard'
+                          : busy
+                            ? 'bg-paper-dark/60 opacity-60'
+                            : 'bg-paper-dark hover:bg-mustard'
+                      }`}
+                    >
+                      {isPicked && (
+                        <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin" />
+                      )}
+                      {w}
+                    </motion.button>
+                  );
+                })}
               </div>
               <p className="text-sm text-ink-faint">If you don&rsquo;t pick, the first option is auto-selected.</p>
             </>

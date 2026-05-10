@@ -86,7 +86,7 @@ export async function POST(
         // guesser themselves sees it; clients filter to show
         // "{name} guessed the word!" for everyone else.
         await sb.from('chat_messages').insert({
-          id: nanoid(),
+          id: body.id ?? nanoid(),
           room_code: code,
           player_id: sender.id,
           player_name: sender.name,
@@ -101,7 +101,7 @@ export async function POST(
 
       if (isCloseMatch(text, room.word)) {
         await sb.from('chat_messages').insert({
-          id: nanoid(),
+          id: body.id ?? nanoid(),
           room_code: code,
           player_id: sender.id,
           player_name: sender.name,

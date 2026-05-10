@@ -82,6 +82,9 @@ export const StrokeBodySchema = z.object({
 export const ChatBodySchema = z.object({
   playerId: PlayerIdSchema,
   text: z.string().min(1).max(CHAT_MAX_LENGTH),
+  // Client-supplied stable id so the sender can render an optimistic copy
+  // and dedupe (upsert) when the canonical Realtime echo arrives.
+  id: z.string().min(1).max(64).optional(),
 });
 
 export const KickBodySchema = z.object({

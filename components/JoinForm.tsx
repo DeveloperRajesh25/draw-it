@@ -113,7 +113,7 @@ export function JoinForm({
               <Button type="button" variant="ghost" onClick={() => router.push('/')}>
                 Back
               </Button>
-              <Button type="submit" className="flex-1" disabled={busy}>
+              <Button type="submit" className="flex-1" disabled={busy} loading={busy}>
                 {busy ? 'Joining…' : 'Join'}
               </Button>
             </div>

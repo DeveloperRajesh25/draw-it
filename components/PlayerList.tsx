@@ -1,5 +1,5 @@
 'use client';
-import { Crown, MoreVertical, Pencil, X } from 'lucide-react';
+import { Crown, Loader2, MoreVertical, Pencil, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Player } from '@/lib/types';
 import { ConnectionDot } from './ConnectionDot';
@@ -12,6 +12,7 @@ export function PlayerList({
   meId,
   connectedIds,
   onKick,
+  kickingId,
 }: {
   players: Player[];
   drawerId: string | null;
@@ -19,6 +20,7 @@ export function PlayerList({
   meId: string;
   connectedIds: Set<string>;
   onKick?: (id: string) => void;
+  kickingId?: string | null;
 }) {
   const sorted = [...players].sort((a, b) => b.score - a.score);
   return (
@@ -63,11 +65,17 @@ export function PlayerList({
               <button
                 type="button"
                 onClick={() => onKick(p.id)}
-                className="press-doodle rounded-md border border-ink/40 p-1 text-ink-soft hover:bg-ink/5"
+                disabled={kickingId === p.id}
+                className="press-doodle rounded-md border border-ink/40 p-1 text-ink-soft hover:bg-ink/5 disabled:opacity-50"
                 aria-label={`Kick ${p.name}`}
+                aria-busy={kickingId === p.id || undefined}
                 title="Kick"
               >
-                <X className="h-4 w-4" />
+                {kickingId === p.id ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <X className="h-4 w-4" />
+                )}
               </button>
             )}
             {!onKick && (

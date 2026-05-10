@@ -1,14 +1,17 @@
 'use client';
 import * as React from 'react';
 import { Send } from 'lucide-react';
+import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 import { Input } from './ui/Input';
 import { CHAT_MAX_LENGTH } from '@/lib/constants';
 import type { ChatMessage } from '@/lib/types';
+import { useRoomStore } from '@/lib/store';
 
 type Props = {
   messages: ChatMessage[];
   meId: string;
+  meName: string;
   drawerId: string | null;
   meHasGuessed: boolean;
   canChat: boolean;
@@ -16,51 +19,69 @@ type Props = {
 };
 
 /**
- * Chat list with anti-spoiler filtering. Each message is decided based on:
- *   - type
- *   - sender (the message author)
- *   - viewer (the local player)
+ * Chat list with optimistic local-echo and anti-spoiler filtering.
  *
- * Rules:
- *   - 'normal'        — visible to everyone (drawer's chat is rejected server-side).
+ * Send flow:
+ *   1. User submits → we generate a nanoid and append a 'normal' message to
+ *      the store immediately. The input clears and the list scrolls.
+ *   2. We POST to /api/rooms/[code]/chat with the same id.
+ *   3. Server inserts the row with that id (and the canonical type if it was
+ *      an exact/close guess). The Realtime echo arrives within ~100ms and
+ *      the store upserts by id — replacing our optimistic copy in place.
+ *   4. On non-OK response we roll back the optimistic message.
+ *
+ * Visibility rules:
+ *   - 'normal'              — visible to everyone (drawer's chat is rejected server-side).
  *   - 'system'/'join'/'leave' — visible to everyone.
- *   - 'correct-guess' — sender sees the actual word; everyone else sees a
- *                       generic "Name guessed the word!" notice.
- *   - 'close-guess'   — only visible to the sender.
+ *   - 'correct-guess'       — sender sees the actual word; everyone else sees
+ *                             a generic "Name guessed the word!" notice.
+ *   - 'close-guess'         — only visible to the sender.
  */
 export function Chat(props: Props) {
-  const { messages, meId, canChat, roomCode } = props;
+  const { messages, meId, meName, canChat, roomCode } = props;
   const listRef = React.useRef<HTMLUListElement>(null);
   const [text, setText] = React.useState('');
-  const [busy, setBusy] = React.useState(false);
+  const appendChat = useRoomStore((s) => s.appendChat);
+  const removeChat = useRoomStore((s) => s.removeChat);
 
   React.useEffect(() => {
     const el = listRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, messages[messages.length - 1]?.id]);
 
-  const send = async (e?: React.FormEvent) => {
+  const send = (e?: React.FormEvent) => {
     e?.preventDefault();
     const value = text.trim();
-    if (!value || busy) return;
-    setBusy(true);
+    if (!value || !canChat) return;
+    const id = nanoid();
+    const optimistic: ChatMessage = {
+      id,
+      roomCode,
+      playerId: meId,
+      playerName: meName || 'You',
+      text: value,
+      type: 'normal',
+      createdAt: new Date().toISOString(),
+    };
+    appendChat(optimistic);
     setText('');
-    try {
-      const res = await fetch(`/api/rooms/${roomCode}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerId: meId, text: value }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        if (j.error) console.warn(j.error);
+    // Fire and (best-effort) handle errors. We intentionally don't await —
+    // the optimistic UI is already up-to-date and the user can keep typing.
+    void (async () => {
+      try {
+        const res = await fetch(`/api/rooms/${encodeURIComponent(roomCode)}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, playerId: meId, text: value }),
+        });
+        if (!res.ok) {
+          removeChat(id);
+        }
+      } catch {
+        removeChat(id);
       }
-    } catch {
-      /* ignore */
-    } finally {
-      setBusy(false);
-    }
+    })();
   };
 
   return (
@@ -80,16 +101,17 @@ export function Chat(props: Props) {
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
             placeholder={canChat ? 'Type a guess…' : 'Chat is locked'}
-            disabled={!canChat || busy}
+            disabled={!canChat}
             inputMode="text"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
+            enterKeyHint="send"
             className="h-10"
           />
           <button
             type="submit"
-            disabled={!canChat || busy || !text.trim()}
+            disabled={!canChat || !text.trim()}
             className="press-doodle inline-flex h-10 w-10 items-center justify-center rounded-md border-2 border-ink bg-ink text-paper disabled:opacity-50"
             aria-label="Send"
           >
