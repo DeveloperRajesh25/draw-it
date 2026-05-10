@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Paper-and-ink doodle palette */
+    --paper: 44 38% 95%;          /* warm cream */
+    --paper-dark: 38 30% 88%;     /* slightly deeper cream for cards */
+    --ink: 220 20% 12%;           /* near-black ink */
+    --ink-soft: 220 15% 30%;      /* secondary text */
+    --ink-faint: 220 10% 55%;     /* tertiary */
+    --line: 220 20% 12%;          /* hard borders */
+
+    /* Accents */
+    --coral: 8 75% 62%;
+    --mustard: 42 85% 55%;
+    --mint: 156 50% 60%;
+    --sky: 200 75% 65%;
+    --plum: 290 35% 55%;
+
+    /* shadcn-compatible aliases */
+    --background: var(--paper);
+    --foreground: var(--ink);
+    --card: var(--paper-dark);
+    --card-foreground: var(--ink);
+    --popover: var(--paper);
+    --popover-foreground: var(--ink);
+    --primary: var(--ink);
+    --primary-foreground: var(--paper);
+    --secondary: var(--paper-dark);
+    --secondary-foreground: var(--ink);
+    --muted: var(--paper-dark);
+    --muted-foreground: var(--ink-soft);
+    --accent: var(--coral);
+    --accent-foreground: var(--ink);
+    --destructive: 0 70% 55%;
+    --destructive-foreground: var(--paper);
+    --border: var(--line);
+    --input: var(--line);
+    --ring: var(--ink);
+    --radius: 0.75rem;
+  }
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-paper: hsl(var(--paper));
+  --color-paper-dark: hsl(var(--paper-dark));
+  --color-ink: hsl(var(--ink));
+  --color-ink-soft: hsl(var(--ink-soft));
+  --color-ink-faint: hsl(var(--ink-faint));
+  --color-line: hsl(var(--line));
+  --color-coral: hsl(var(--coral));
+  --color-mustard: hsl(var(--mustard));
+  --color-mint: hsl(var(--mint));
+  --color-sky: hsl(var(--sky));
+  --color-plum: hsl(var(--plum));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), "Caveat", cursive;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html, body {
+    background: hsl(var(--paper));
+    color: hsl(var(--ink));
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    /* faint dotted paper texture */
+    background-image: radial-gradient(hsl(var(--ink) / 0.06) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  /* Disable iOS/Android pull-to-refresh & overscroll glow on game area */
+  .no-overscroll { overscroll-behavior: contain; }
+}
+
+@layer utilities {
+  /* Hard offset shadow — the signature of paper-doodle */
+  .shadow-doodle {
+    box-shadow: 4px 4px 0 0 hsl(var(--ink));
+  }
+  .shadow-doodle-sm {
+    box-shadow: 2px 2px 0 0 hsl(var(--ink));
+  }
+  .shadow-doodle-lg {
+    box-shadow: 6px 6px 0 0 hsl(var(--ink));
+  }
+  .shadow-doodle-soft {
+    box-shadow: 3px 3px 0 0 hsl(var(--ink) / 0.4);
+  }
+
+  .border-doodle {
+    border-width: 2px;
+    border-color: hsl(var(--ink));
+  }
+
+  /* Press effect for buttons with offset shadow */
+  .press-doodle {
+    transition: transform 80ms ease, box-shadow 80ms ease;
+  }
+  .press-doodle:active {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 0 hsl(var(--ink));
+  }
+
+  .canvas-paper {
+    background: #fff;
+    background-image:
+      linear-gradient(hsl(var(--ink) / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--ink) / 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .scrollbar-doodle::-webkit-scrollbar { width: 8px; height: 8px; }
+  .scrollbar-doodle::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-doodle::-webkit-scrollbar-thumb {
+    background: hsl(var(--ink) / 0.3);
+    border-radius: 4px;
+  }
+}
