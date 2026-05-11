@@ -11,6 +11,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { getSoundEnabled, setSoundEnabled } from '@/lib/identity';
+import { sfx } from '@/lib/sound';
 
 type Props = {
   roomCode: string;
@@ -73,7 +74,10 @@ export function SettingsMenu({ roomCode, onLeave, leaving }: Props) {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          sfx.click();
+          setOpen((o) => !o);
+        }}
         className="press-doodle inline-flex h-9 w-9 items-center justify-center rounded-md border-2 border-ink bg-paper-dark shadow-doodle-sm"
         aria-label="Settings"
         aria-expanded={open}

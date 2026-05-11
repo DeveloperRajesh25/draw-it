@@ -141,6 +141,8 @@ function RoomShell({
       else if (phase === 'word-pick') {
         if (prev === 'lobby') sfx.gameStart();
         else sfx.wordPick();
+      } else if (phase === 'drawing' && prev === 'word-pick') {
+        sfx.wordPicked();
       }
     }
     lastPhaseRef.current = phase;

@@ -4,6 +4,7 @@ import { Brush, Eraser, Eye, Palette, PaintBucket, RotateCcw, Trash2 } from 'luc
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { cn } from '@/lib/utils';
 import { BRUSH_SIZES, COLORS } from '@/lib/constants';
+import { sfx } from '@/lib/sound';
 import type { Tool } from '@/lib/types';
 
 type Props = {
@@ -76,6 +77,7 @@ function ColorMenu({ color, onColor }: { color: string; onColor: (c: string) => 
                 type="button"
                 aria-label={`Color ${c}`}
                 onClick={() => {
+                  sfx.click();
                   onColor(c);
                   setOpen(false);
                 }}
@@ -123,6 +125,7 @@ function SizeMenu({ size, onSize }: { size: number; onSize: (s: number) => void 
               type="button"
               aria-label={`Size ${s}`}
               onClick={() => {
+                sfx.click();
                 onSize(s);
                 setOpen(false);
               }}
@@ -162,7 +165,10 @@ function ToolBtn({
       type="button"
       aria-label={label}
       title={label}
-      onClick={onClick}
+      onClick={() => {
+        sfx.click();
+        onClick();
+      }}
       className={cn(
         'press-doodle flex h-9 w-9 items-center justify-center rounded-md border-2 border-ink bg-paper-dark',
         active && 'bg-coral',

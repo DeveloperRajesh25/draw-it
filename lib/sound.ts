@@ -2,73 +2,150 @@
 import { getSoundEnabled } from './identity';
 
 let _ctx: AudioContext | null = null;
+let _master: GainNode | null = null;
 
 function getCtx(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (_ctx) return _ctx;
   try {
-    const Ctor = (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext })
-      .AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const Ctor =
+      (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return null;
-    _ctx = new Ctor();
-    return _ctx;
+    const ctx = new Ctor();
+
+    // Master chain: gain → compressor → destination. Lets us push volumes
+    // hard without clipping the speaker.
+    const master = ctx.createGain();
+    master.gain.value = 1.0;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -8;
+    comp.knee.value = 6;
+    comp.ratio.value = 6;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.06;
+    master.connect(comp).connect(ctx.destination);
+
+    _ctx = ctx;
+    _master = master;
+    return ctx;
   } catch {
     return null;
   }
 }
 
-function tone(freq: number, durationMs: number, volume = 0.08, type: OscillatorType = 'sine') {
+function tone(
+  freq: number,
+  durationMs: number,
+  volume = 0.6,
+  type: OscillatorType = 'sine',
+  delayMs = 0,
+) {
   if (!getSoundEnabled()) return;
   const ctx = getCtx();
-  if (!ctx) return;
+  if (!ctx || !_master) return;
   if (ctx.state === 'suspended') void ctx.resume().catch(() => {/* ignore */});
+  const start = ctx.currentTime + delayMs / 1000;
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = type;
   osc.frequency.value = freq;
-  osc.connect(gain).connect(ctx.destination);
-  const now = ctx.currentTime;
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(volume, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + durationMs / 1000);
-  osc.start(now);
-  osc.stop(now + durationMs / 1000 + 0.05);
+  osc.connect(gain).connect(_master);
+  gain.gain.setValueAtTime(0, start);
+  gain.gain.linearRampToValueAtTime(volume, start + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.001, start + durationMs / 1000);
+  osc.start(start);
+  osc.stop(start + durationMs / 1000 + 0.05);
+}
+
+function chord(freqs: number[], durationMs: number, volume = 0.5, type: OscillatorType = 'triangle') {
+  freqs.forEach((f) => tone(f, durationMs, volume / Math.sqrt(freqs.length), type));
 }
 
 export const sfx = {
-  tick: () => tone(720, 90, 0.05, 'square'),
+  // Generic UI click — short, crisp.
+  click: () => tone(820, 30, 0.45, 'square'),
+
+  // Last-10s countdown blip.
+  tick: () => tone(760, 70, 0.55, 'square'),
+
+  // Correct guess: three rising notes, celebratory.
   correctGuess: () => {
-    tone(660, 90, 0.07, 'triangle');
-    setTimeout(() => tone(880, 140, 0.07, 'triangle'), 90);
+    tone(660, 90, 0.75, 'triangle');
+    tone(880, 110, 0.75, 'triangle', 80);
+    tone(1320, 160, 0.7, 'triangle', 180);
   },
-  // New round / word-pick start: ascending two-note chime
+
+  // Close guess (sender-only): warm "almost" ping.
+  closeGuess: () => {
+    tone(560, 90, 0.55, 'sine');
+    tone(620, 110, 0.45, 'sine', 60);
+  },
+
+  // Next round word-pick begins (ascending two-note).
   wordPick: () => {
-    tone(523, 110, 0.06, 'triangle');
-    setTimeout(() => tone(784, 140, 0.06, 'triangle'), 110);
+    tone(523, 110, 0.65, 'triangle');
+    tone(784, 140, 0.65, 'triangle', 110);
   },
-  // Game start: bright fanfare (3 ascending notes)
+
+  // Drawer picked a word — high chirp transitioning to drawing.
+  wordPicked: () => {
+    tone(880, 70, 0.6, 'triangle');
+    tone(1175, 110, 0.6, 'triangle', 60);
+  },
+
+  // Game start: bright ascending fanfare (3 notes).
   gameStart: () => {
-    [523, 659, 880].forEach((f, i) =>
-      setTimeout(() => tone(f, 160, 0.07, 'triangle'), i * 100),
-    );
+    [523, 659, 880].forEach((f, i) => tone(f, 170, 0.75, 'triangle', i * 90));
   },
-  // Round/turn end: descending two-note
+
+  // Round end: descending two-note.
   roundEnd: () => {
-    tone(440, 150, 0.06, 'sine');
-    setTimeout(() => tone(330, 220, 0.05, 'sine'), 100);
+    tone(440, 150, 0.65, 'sine');
+    tone(330, 220, 0.55, 'sine', 100);
   },
-  // Game end / podium: 4-note ascending fanfare
+
+  // Game end / podium: 5-note ascending fanfare with chord finish.
   fanfare: () => {
-    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => tone(f, 180, 0.07, 'triangle'), i * 110));
+    [523, 659, 784, 1047].forEach((f, i) => tone(f, 180, 0.75, 'triangle', i * 100));
+    chord([523, 659, 784, 1047], 400, 0.6, 'triangle');
+    // delayed chord
+    setTimeout(() => chord([523, 659, 784, 1047], 350, 0.55, 'triangle'), 450);
   },
-  // Player joined: quick blip up
+
+  // Player joined: quick "blip-up".
   playerJoin: () => {
-    tone(620, 80, 0.05, 'triangle');
-    setTimeout(() => tone(820, 110, 0.05, 'triangle'), 70);
+    tone(620, 70, 0.55, 'triangle');
+    tone(820, 100, 0.55, 'triangle', 60);
   },
-  // Player left: low descending blip (different from correct/round-end)
+
+  // Player left: descending sawtooth.
   playerLeave: () => {
-    tone(420, 90, 0.05, 'sawtooth');
-    setTimeout(() => tone(280, 160, 0.05, 'sawtooth'), 80);
+    tone(420, 90, 0.55, 'sawtooth');
+    tone(280, 160, 0.5, 'sawtooth', 80);
   },
+
+  // Hint letter revealed — soft high ping.
+  hint: () => tone(1320, 70, 0.45, 'sine'),
+
+  // Outgoing chat message (own send).
+  chatSend: () => tone(900, 40, 0.4, 'sine'),
+
+  // Incoming chat message (others).
+  chatReceive: () => tone(680, 50, 0.35, 'sine'),
+
+  // Undo last stroke.
+  undo: () => {
+    tone(500, 50, 0.45, 'triangle');
+    tone(380, 80, 0.4, 'triangle', 40);
+  },
+
+  // Clear canvas.
+  clear: () => {
+    tone(300, 60, 0.5, 'square');
+    tone(200, 90, 0.45, 'square', 60);
+  },
+
+  // Stroke commit (pen tap) — kept subtle to avoid spamming.
+  stroke: () => tone(180, 18, 0.18, 'sine'),
 };

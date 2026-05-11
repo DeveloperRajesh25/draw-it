@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { sfx } from '@/lib/sound';
 import type { Player, Room } from '@/lib/types';
 import { broadcastStateRefresh, refetchRoomSnapshot } from '@/lib/use-room';
 
@@ -26,6 +27,7 @@ export function WordPickOverlay({
 
   const select = async (idx: number) => {
     if (!isDrawer || busy) return;
+    sfx.click();
     setPickedIdx(idx);
     try {
       const res = await fetch(`/api/rooms/${room.code}/select-word`, {

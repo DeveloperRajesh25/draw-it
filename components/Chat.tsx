@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 import { CHAT_MAX_LENGTH } from '@/lib/constants';
 import type { ChatMessage } from '@/lib/types';
+import { sfx } from '@/lib/sound';
 import { useRoomStore } from '@/lib/store';
 import { broadcastChat, broadcastStateRefresh } from '@/lib/use-room';
 
@@ -63,6 +64,7 @@ export function useChat({
       createdAt: new Date().toISOString(),
     };
     appendChat(optimistic);
+    sfx.chatSend();
     const safeToFanOutImmediately = meHasGuessed;
     if (safeToFanOutImmediately) {
       broadcastChat(roomCode, optimistic);
@@ -107,6 +109,7 @@ export function useChat({
             createdAt: optimistic.createdAt,
           };
           appendChat(upgraded);
+          sfx.closeGuess();
         } else if (!safeToFanOutImmediately) {
           broadcastChat(roomCode, optimistic);
         }

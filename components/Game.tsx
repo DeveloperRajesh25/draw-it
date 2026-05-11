@@ -53,33 +53,49 @@ export function Game({
 
   const lastRevealKey = React.useRef<string>('');
 
-  const seenCorrectIdsRef = React.useRef<Set<string>>(new Set());
+  // Chat audio: track which message IDs we've seen, then fire the right
+  // sound for any newly-arrived ones. Done in one pass so a single tick
+  // produces at most one correct-guess + one chat-receive.
+  const seenChatIdsRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
-    const isFirstSeed = seenCorrectIdsRef.current.size === 0;
-    let didAnyNew = false;
+    const isFirstSeed = seenChatIdsRef.current.size === 0;
+    let didCorrect = false;
+    let didReceive = false;
     for (const m of chatMessages) {
-      if (m.type !== 'correct-guess') continue;
-      if (seenCorrectIdsRef.current.has(m.id)) continue;
-      seenCorrectIdsRef.current.add(m.id);
-      if (!isFirstSeed) didAnyNew = true;
+      if (seenChatIdsRef.current.has(m.id)) continue;
+      seenChatIdsRef.current.add(m.id);
+      if (isFirstSeed) continue;
+      if (m.type === 'correct-guess') didCorrect = true;
+      else if (m.type === 'normal' && m.playerId !== meId) didReceive = true;
     }
-    if (didAnyNew) sfx.correctGuess();
-  }, [chatMessages]);
+    if (didCorrect) sfx.correctGuess();
+    else if (didReceive) sfx.chatReceive();
+  }, [chatMessages, meId]);
 
+  // Player join/leave audio: compare current player IDs against last tick.
   const seenPlayerIdsRef = React.useRef<Set<string> | null>(null);
   React.useEffect(() => {
     const next = new Set(players.map((p) => p.id));
     const prev = seenPlayerIdsRef.current;
     if (prev) {
-      for (const id of prev) {
-        if (!next.has(id)) {
-          sfx.playerLeave();
-          break;
-        }
-      }
+      let joined = false;
+      let left = false;
+      for (const id of next) if (!prev.has(id)) joined = true;
+      for (const id of prev) if (!next.has(id)) left = true;
+      if (joined) sfx.playerJoin();
+      if (left) sfx.playerLeave();
     }
     seenPlayerIdsRef.current = next;
   }, [players]);
+
+  // Hint reveals: ping when a new letter appears.
+  const seenHintCountRef = React.useRef<number>(-1);
+  React.useEffect(() => {
+    if (seenHintCountRef.current >= 0 && hintReveals.length > seenHintCountRef.current) {
+      sfx.hint();
+    }
+    seenHintCountRef.current = hintReveals.length;
+  }, [hintReveals]);
 
   React.useEffect(() => {
     if (!inDrawing) return;
@@ -111,6 +127,7 @@ export function Game({
 
   const onUndo = async () => {
     if (!canDraw) return;
+    sfx.undo();
     await fetch(`/api/rooms/${room.code}/strokes/last`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -121,6 +138,7 @@ export function Game({
   const onClear = async () => {
     if (!canDraw) return;
     if (!window.confirm('Clear the canvas?')) return;
+    sfx.clear();
     await fetch(`/api/rooms/${room.code}/strokes`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
