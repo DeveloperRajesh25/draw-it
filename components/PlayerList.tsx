@@ -5,7 +5,7 @@ import type { Player } from '@/lib/types';
 import { ConnectionDot } from './ConnectionDot';
 import { AvatarSvg } from './AvatarPicker';
 
-type Variant = 'list' | 'strip';
+type Variant = 'list' | 'strip' | 'compact';
 
 export function PlayerList({
   players,
@@ -64,6 +64,52 @@ export function PlayerList({
                     <span className="ml-0.5 text-[hsl(140_60%_30%)]">+{p.pointsThisRound}</span>
                   )}
                 </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  if (variant === 'compact') {
+    return (
+      <ul className="flex flex-col">
+        {sorted.map((p, i) => {
+          const isMe = p.id === meId;
+          const isHost = p.id === hostId;
+          const isDrawer = p.id === drawerId;
+          return (
+            <li
+              key={p.id}
+              className={cn(
+                'flex items-center gap-1.5 border-b border-ink/10 px-1.5 py-1 last:border-b-0',
+                isDrawer && 'bg-mustard/70',
+                p.hasGuessed && !isDrawer && 'bg-mint/40',
+                !p.connected && 'opacity-60',
+              )}
+            >
+              <span className="w-4 shrink-0 text-center font-mono text-[10px] text-ink-soft">
+                #{i + 1}
+              </span>
+              <div className="shrink-0 rounded-full border border-ink bg-paper-dark p-px">
+                <AvatarSvg avatar={p.avatar} size={22} />
+              </div>
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="flex items-center gap-0.5">
+                  <span className="truncate text-[11px] font-semibold">
+                    {p.name}
+                    {isMe && <span className="ml-0.5 text-ink-faint">(you)</span>}
+                  </span>
+                  {isHost && <Crown className="h-2.5 w-2.5 shrink-0 text-mustard" aria-label="Host" />}
+                  {isDrawer && <Pencil className="h-2.5 w-2.5 shrink-0" aria-label="Drawing" />}
+                </div>
+                <div className="text-[10px] tabular-nums text-ink-soft">
+                  {p.score} pts
+                  {p.pointsThisRound > 0 && (
+                    <span className="ml-1 text-[hsl(140_60%_30%)]">+{p.pointsThisRound}</span>
+                  )}
+                </div>
               </div>
             </li>
           );

@@ -30,7 +30,7 @@ export function RoundEndOverlay({
   }, [room.phaseEndsAt]);
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 overflow-y-auto rounded-lg bg-linear-to-b from-ink/85 to-ink/95 px-4 py-5 text-paper backdrop-blur-sm sm:gap-4 sm:px-6">
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-linear-to-b from-ink/85 to-ink/95 px-4 py-5 text-paper backdrop-blur-sm sm:gap-4 sm:px-6">
       <motion.div
         initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}

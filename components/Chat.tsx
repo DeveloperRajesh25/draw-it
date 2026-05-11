@@ -1,6 +1,5 @@
 'use client';
 import * as React from 'react';
-import { Send } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { cn } from '@/lib/utils';
 import { CHAT_MAX_LENGTH } from '@/lib/constants';
@@ -8,18 +7,16 @@ import type { ChatMessage } from '@/lib/types';
 import { useRoomStore } from '@/lib/store';
 import { broadcastChat, broadcastStateRefresh } from '@/lib/use-room';
 
-type Props = {
-  messages: ChatMessage[];
-  meId: string;
-  meName: string;
-  drawerId: string | null;
-  meHasGuessed: boolean;
+type ChatState = {
+  text: string;
+  setText: (v: string) => void;
+  send: (e?: React.FormEvent) => void;
   canChat: boolean;
-  roomCode: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
 };
 
 /**
- * Chat list with optimistic local-echo and anti-spoiler filtering.
+ * Chat send logic with optimistic local-echo and anti-spoiler filtering.
  *
  * Send flow:
  *   1. User submits → we generate a nanoid and append a 'normal' message to
@@ -29,30 +26,27 @@ type Props = {
  *      an exact/close guess). The Realtime echo arrives within ~100ms and
  *      the store upserts by id — replacing our optimistic copy in place.
  *   4. On non-OK response we roll back the optimistic message.
+ *
+ * Returns a state bundle so the list and input can render in different parts
+ * of the DOM while sharing the same controlled text + send action.
  */
-export function Chat(props: Props) {
-  const { messages, meId, meName, canChat, meHasGuessed, roomCode } = props;
-  const listRef = React.useRef<HTMLUListElement>(null);
+export function useChat({
+  meId,
+  meName,
+  meHasGuessed,
+  canChat,
+  roomCode,
+}: {
+  meId: string;
+  meName: string;
+  meHasGuessed: boolean;
+  canChat: boolean;
+  roomCode: string;
+}): ChatState {
   const [text, setText] = React.useState('');
   const appendChat = useRoomStore((s) => s.appendChat);
   const removeChat = useRoomStore((s) => s.removeChat);
-
-  React.useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length, messages[messages.length - 1]?.id]);
-
-  // When the chat input gains focus on mobile, scroll it into view above the
-  // on-screen keyboard. We deliberately do NOT lock the body or rebind the
-  // shell height — the canvas is sized in `svh` units, which are stable when
-  // the keyboard opens, so it never resizes while typing.
   const inputRef = React.useRef<HTMLInputElement>(null);
-  const onInputFocus = React.useCallback(() => {
-    requestAnimationFrame(() => {
-      inputRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-    });
-  }, []);
 
   const send = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -69,11 +63,6 @@ export function Chat(props: Props) {
       createdAt: new Date().toISOString(),
     };
     appendChat(optimistic);
-    // Anti-spoiler: if the sender hasn't guessed yet, this message could BE
-    // the answer — broadcasting it to everyone as 'normal' would briefly
-    // reveal the word. Wait for the server verdict before fanning out.
-    // Players who have already guessed correctly can chat freely (they can't
-    // reveal anything new), so we broadcast immediately for them.
     const safeToFanOutImmediately = meHasGuessed;
     if (safeToFanOutImmediately) {
       broadcastChat(roomCode, optimistic);
@@ -94,10 +83,6 @@ export function Chat(props: Props) {
           correct?: boolean;
           close?: boolean;
         };
-        // Sender renders the verdict instantly. We also broadcast the canonical
-        // message so every other client renders it at the same time — no CDC
-        // wait. The DB row arriving via postgres_changes later upserts by id
-        // and is a visual no-op.
         if (j.correct) {
           const upgraded: ChatMessage = {
             id,
@@ -110,10 +95,6 @@ export function Chat(props: Props) {
           };
           appendChat(upgraded);
           broadcastChat(roomCode, upgraded);
-          // The server may have flagged the round as "everyone guessed" and
-          // moved phase_ends_at to NOW(). Tell peers to refresh so their
-          // timer + phase advance together — without this they'd wait on
-          // the rooms postgres_changes event (often delayed).
           broadcastStateRefresh(roomCode);
         } else if (j.close) {
           const upgraded: ChatMessage = {
@@ -126,12 +107,7 @@ export function Chat(props: Props) {
             createdAt: optimistic.createdAt,
           };
           appendChat(upgraded);
-          // close-guess is filtered to sender-only on receivers — no need to
-          // broadcast it to others.
         } else if (!safeToFanOutImmediately) {
-          // We held back the optimistic broadcast because the sender hadn't
-          // guessed yet. Now that the server has confirmed it's a normal
-          // message (not the word), fan it out to everyone else.
           broadcastChat(roomCode, optimistic);
         }
       } catch {
@@ -140,44 +116,64 @@ export function Chat(props: Props) {
     })();
   };
 
+  return { text, setText, send, canChat, inputRef };
+}
+
+export function ChatList({
+  messages,
+  meId,
+  className,
+}: {
+  messages: ChatMessage[];
+  meId: string;
+  className?: string;
+}) {
+  const listRef = React.useRef<HTMLUListElement>(null);
+  React.useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, messages[messages.length - 1]?.id]);
+
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-lg border-2 border-ink bg-paper shadow-doodle-sm">
-      <ul
-        ref={listRef}
-        className="scrollbar-doodle min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2 text-sm sm:px-3"
-      >
-        {messages.map((m) => (
-          <ChatLine key={m.id} m={m} meId={meId} />
-        ))}
-      </ul>
-      <form onSubmit={send} className="border-t-2 border-ink bg-paper-dark p-2">
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
-            onFocus={onInputFocus}
-            placeholder={canChat ? 'Type your guess here...' : 'Chat is locked'}
-            disabled={!canChat}
-            inputMode="text"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            enterKeyHint="send"
-            // 16px font on mobile prevents iOS from auto-zooming the page on focus.
-            className="h-10 min-w-0 flex-1 rounded-md border-2 border-ink bg-paper px-3 text-base text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-coral disabled:opacity-50 sm:text-sm"
-          />
-          <button
-            type="submit"
-            disabled={!canChat || !text.trim()}
-            className="press-doodle inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border-2 border-ink bg-ink text-paper disabled:opacity-50"
-            aria-label="Send"
-          >
-            <Send className="h-4 w-4" />
-          </button>
-        </div>
-      </form>
-    </div>
+    <ul
+      ref={listRef}
+      className={cn(
+        'scrollbar-doodle min-h-0 flex-1 space-y-1 overflow-y-auto bg-paper px-2 py-2 text-sm sm:px-3',
+        className,
+      )}
+    >
+      {messages.map((m) => (
+        <ChatLine key={m.id} m={m} meId={meId} />
+      ))}
+    </ul>
+  );
+}
+
+export function ChatInput({
+  chat,
+  className,
+}: {
+  chat: ChatState;
+  className?: string;
+}) {
+  return (
+    <form onSubmit={chat.send} className={cn('chat-input-bar bg-paper-dark', className)}>
+      <input
+        ref={chat.inputRef}
+        value={chat.text}
+        onChange={(e) => chat.setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
+        placeholder={chat.canChat ? 'Type your guess here...' : 'Chat is locked'}
+        disabled={!chat.canChat}
+        inputMode="text"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        enterKeyHint="send"
+        // 16px font on mobile prevents iOS from auto-zooming the page on focus.
+        className="block h-11 w-full bg-paper px-3 text-base text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-inset focus:ring-coral disabled:opacity-50 sm:h-10 sm:text-sm"
+      />
+    </form>
   );
 }
 

@@ -150,11 +150,13 @@
     border-radius: 4px;
   }
 
-  /* Game shell — pinned to the small viewport unit so the layout never jumps
-     when the address bar or on-screen keyboard appears. Width drives the
-     canvas size, so the canvas height never changes while typing. */
+  /* Game shell — pinned to a fixed `100svh`, no scrolling. The on-screen
+     keyboard overlays the page (via `interactive-widget=overlays-content`),
+     so the shell height never changes when the keyboard opens. Only the
+     chat input translates above the keyboard, driven by --keyboard-inset. */
   .game-shell {
-    min-height: 100svh;
+    height: 100svh;
+    overflow: hidden;
   }
   @media (min-width: 640px) {
     .game-shell {
@@ -162,12 +164,18 @@
     }
   }
 
+  /* Chat input — translates above the on-screen keyboard. --keyboard-inset
+     is set by the VisualViewport listener in Game.tsx; it's 0 when no
+     keyboard is open. */
+  .chat-input-bar {
+    transform: translateY(calc(-1 * var(--keyboard-inset, 0px)));
+    transition: transform 120ms ease;
+  }
+
   /* Canvas frame — width comes from the container; height is locked by the
      aspect ratio applied inside Canvas.tsx. On mobile we cap the height by
      the small viewport unit so the canvas + chat fit on screen without
-     scrolling. The width-based aspect-ratio means an opened keyboard
-     (which shrinks visualViewport.height but not width) leaves the frame
-     untouched. */
+     scrolling. */
   .canvas-frame {
     max-height: 46svh;
     max-width: calc(46svh * 4 / 3);

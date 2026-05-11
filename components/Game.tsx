@@ -1,18 +1,15 @@
 'use client';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut } from 'lucide-react';
 import { Canvas } from './Canvas';
-import { Chat } from './Chat';
+import { ChatInput, ChatList, useChat } from './Chat';
 import { PlayerList } from './PlayerList';
-import { RoomPill } from './RoomPill';
 import { RoundEndOverlay } from './RoundEnd';
-import { SoundToggle } from './SoundToggle';
+import { SettingsMenu } from './SettingsMenu';
 import { Timer } from './Timer';
 import { Toolbar } from './Toolbar';
 import { WordPattern } from './WordPattern';
 import { WordPickOverlay } from './WordPick';
-import { Button } from './ui/Button';
 import { leaveRoom } from '@/lib/leave';
 import { sfx } from '@/lib/sound';
 import type { ChatMessage, HintReveal, Player, Room, Stroke, Tool } from '@/lib/types';
@@ -34,7 +31,7 @@ export function Game({
   room,
   players,
   strokes,
-  chat,
+  chat: chatMessages,
   hintReveals,
   meId,
   connectedIds,
@@ -54,24 +51,21 @@ export function Game({
   const [color, setColor] = React.useState<string>(COLORS[1]); // default black
   const [size, setSize] = React.useState<number>(BRUSH_SIZES[1]);
 
-  // Last reveal-hint trigger to debounce
   const lastRevealKey = React.useRef<string>('');
 
-  // Sound: ding on each NEW correct-guess message that arrives.
   const seenCorrectIdsRef = React.useRef<Set<string>>(new Set());
   React.useEffect(() => {
     const isFirstSeed = seenCorrectIdsRef.current.size === 0;
     let didAnyNew = false;
-    for (const m of chat) {
+    for (const m of chatMessages) {
       if (m.type !== 'correct-guess') continue;
       if (seenCorrectIdsRef.current.has(m.id)) continue;
       seenCorrectIdsRef.current.add(m.id);
       if (!isFirstSeed) didAnyNew = true;
     }
     if (didAnyNew) sfx.correctGuess();
-  }, [chat]);
+  }, [chatMessages]);
 
-  // Sound: blip when a player count drops (someone left).
   const seenPlayerIdsRef = React.useRef<Set<string> | null>(null);
   React.useEffect(() => {
     const next = new Set(players.map((p) => p.id));
@@ -150,23 +144,67 @@ export function Game({
     router.push('/');
   };
 
-  // Timer source-of-truth depends on phase. The bar shows a single timer that
-  // re-syncs whenever the phase transitions.
   const timerTotal = inDrawing
     ? room.settings.drawTimeSeconds
     : inWordPick
       ? TIMING.WORD_PICK_SECONDS
       : TIMING.ROUND_END_SECONDS;
 
+  const chatState = useChat({
+    meId,
+    meName: me?.name ?? 'You',
+    meHasGuessed: !!me?.hasGuessed,
+    canChat,
+    roomCode: room.code,
+  });
+
+  // Lock the page so it can't scroll while in-game. The game shell is a
+  // fixed-height container; chat scrolling happens inside its own list.
+  React.useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtml = html.style.overflow;
+    const prevBody = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtml;
+      body.style.overflow = prevBody;
+    };
+  }, []);
+
+  // Keyboard inset: with `interactive-widget=overlays-content`, the on-screen
+  // keyboard overlays the page without resizing the layout viewport. We
+  // measure the gap between the layout viewport and the visual viewport and
+  // expose it as a CSS variable so the chat input can translate above the
+  // keyboard while everything else stays put.
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const root = document.documentElement;
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty('--keyboard-inset', `${inset}px`);
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      root.style.removeProperty('--keyboard-inset');
+    };
+  }, []);
+
   return (
-    <main className="game-shell mx-auto flex w-full max-w-6xl flex-col px-2 pt-2 pb-2 sm:px-4 sm:pt-3 sm:pb-3">
-      {/* Header — single strip: timer/round on left, word pattern centered,
-          sound + leave on right. Mirrors skribbl.io's compact top bar. */}
-      <div className="flex shrink-0 items-center gap-2 rounded-lg border-2 border-ink bg-paper px-2 py-1.5 shadow-doodle-sm sm:gap-3 sm:px-3 sm:py-2">
+    <main className="game-shell relative mx-auto flex w-full max-w-6xl flex-col sm:px-4 sm:pt-3 sm:pb-3">
+      {/* Header strip: timer (left) | word + label (center) | settings (right).
+          Edge-to-edge on mobile (bottom border only); rounded card on sm+. */}
+      <div className="flex shrink-0 items-center gap-2 border-b-2 border-ink bg-paper px-2 py-1.5 sm:gap-3 sm:rounded-lg sm:border-2 sm:px-3 sm:py-2 sm:shadow-doodle-sm">
         <div className="flex shrink-0 flex-col items-center leading-none">
           <Timer endsAt={room.phaseEndsAt} totalSeconds={timerTotal} onExpire={onTick} />
           <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink-soft sm:text-[11px]">
-            R{room.round}/{room.settings.rounds}
+            Round {room.round} of {room.settings.rounds}
           </span>
         </div>
         <div className="flex min-w-0 flex-1 items-center justify-center px-1">
@@ -178,44 +216,30 @@ export function Game({
               word={room.word}
             />
           ) : inRoundEnd && room.word ? (
-            <span className="font-display text-xl text-ink sm:text-2xl">{room.word}</span>
+            <div className="flex flex-col items-center leading-tight">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-soft sm:text-xs">
+                The word was
+              </span>
+              <span className="font-display text-xl text-ink sm:text-2xl">{room.word}</span>
+            </div>
           ) : (
             <span className="font-display text-lg text-ink-soft sm:text-xl">
               {inWordPick ? 'Choosing word…' : 'Get ready…'}
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
-          <RoomPill code={room.code} />
-          <SoundToggle />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={leave}
-            disabled={leaving}
-            loading={leaving}
-            aria-label="Leave"
-            className="px-2"
-          >
-            {!leaving && <LogOut className="h-4 w-4" />}
-          </Button>
+        <div className="flex shrink-0 items-center">
+          <SettingsMenu roomCode={room.code} onLeave={leave} leaving={leaving} />
         </div>
       </div>
 
-      {/* Players strip — horizontal on mobile, sidebar on desktop. */}
-      <div className="mt-1.5 shrink-0 sm:mt-2 lg:hidden">
-        <PlayerList
-          players={players}
-          drawerId={room.drawerId}
-          hostId={room.hostId}
-          meId={meId}
-          connectedIds={connectedIds}
-          variant="strip"
-        />
-      </div>
-
-      {/* Body — mobile: stacked; lg: 3-col grid */}
-      <div className="mt-1.5 flex min-h-0 flex-1 flex-col gap-1.5 sm:mt-2 sm:gap-2 lg:grid lg:grid-cols-[220px_1fr_300px] lg:gap-3">
+      {/* Body — mobile: canvas top, then edge-to-edge players+chat-list row.
+          The chat input is a fixed-position sibling pinned to the viewport
+          bottom (see below), so we reserve a `pb-11` band here on mobile so
+          the chat list doesn't sit behind it. lg: 3-col grid (players
+          sidebar | canvas | chat sidebar) — input lives inside the chat
+          column on desktop, no reserved space needed. */}
+      <div className="flex min-h-0 flex-1 flex-col pb-11 sm:mt-2 sm:gap-2 lg:grid lg:grid-cols-[220px_1fr_300px] lg:gap-3 lg:pb-0">
         {/* Players sidebar (desktop only) */}
         <div className="hidden lg:order-1 lg:block lg:overflow-y-auto">
           <div className="lg:sticky lg:top-0">
@@ -231,7 +255,6 @@ export function Game({
 
         {/* Canvas + toolbar block */}
         <div className="flex shrink-0 flex-col gap-1.5 sm:gap-2 lg:order-2 lg:min-h-0">
-          {/* Toolbar — only when drawing. Reserve space so layout doesn't jump. */}
           {canDraw && (
             <Toolbar
               tool={tool}
@@ -244,10 +267,6 @@ export function Game({
               onClear={onClear}
             />
           )}
-          {/* Canvas frame: sized purely from container width. The aspect ratio
-              keeps the height proportional, and the keyboard opening on mobile
-              never changes the width — so the canvas dimensions are fixed
-              while typing. */}
           <div className="canvas-frame relative mx-auto w-full">
             <Canvas
               roomCode={room.code}
@@ -267,19 +286,39 @@ export function Game({
           </div>
         </div>
 
-        {/* Chat — mobile: fills remaining height; lg: fixed-ish height column */}
-        <div className="min-h-0 flex-1 lg:order-3 lg:h-[68dvh] lg:flex-none">
-          <Chat
-            messages={chat}
-            meId={meId}
-            meName={me?.name ?? 'You'}
-            drawerId={room.drawerId}
-            meHasGuessed={!!me?.hasGuessed}
-            canChat={canChat}
-            roomCode={room.code}
-          />
+        {/* Mobile/tablet bottom row: players | chat-list with a single
+            divider. On sm+ the negative margin cancels main's `sm:px-4` so
+            it touches screen edges. */}
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden border-t-2 border-ink sm:-mx-4 lg:hidden">
+          <div className="scrollbar-doodle min-h-0 w-2/5 max-w-[40%] shrink-0 overflow-y-auto border-r-2 border-ink bg-paper">
+            <PlayerList
+              players={players}
+              drawerId={room.drawerId}
+              hostId={room.hostId}
+              meId={meId}
+              connectedIds={connectedIds}
+              variant="compact"
+            />
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-paper">
+            <ChatList messages={chatMessages} meId={meId} />
+          </div>
+        </div>
+
+        {/* Desktop chat column (list + input stacked, bordered). */}
+        <div className="hidden min-h-0 overflow-hidden rounded-lg border-2 border-ink bg-paper shadow-doodle-sm lg:order-3 lg:flex lg:h-[68dvh] lg:flex-col">
+          <ChatList messages={chatMessages} meId={meId} />
+          <ChatInput chat={chatState} className="border-t-2 border-ink" />
         </div>
       </div>
+
+      {/* Mobile chat input — pinned to the viewport bottom, independent of
+          the in-flow layout above. Translates above the keyboard via the
+          `.chat-input-bar` class driven by --keyboard-inset. */}
+      <ChatInput
+        chat={chatState}
+        className="fixed inset-x-0 bottom-0 z-20 border-t-2 border-ink lg:hidden"
+      />
     </main>
   );
 }

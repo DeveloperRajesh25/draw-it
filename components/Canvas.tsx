@@ -345,7 +345,7 @@ export function Canvas(props: Props) {
     <div className="relative w-full overflow-hidden">
       <div
         ref={wrapRef}
-        className="canvas-paper relative w-full overflow-hidden rounded-lg border-2 border-ink shadow-doodle"
+        className="canvas-paper relative w-full overflow-hidden sm:rounded-lg sm:border-2 sm:border-ink sm:shadow-doodle"
         style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}`, touchAction: 'none' }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

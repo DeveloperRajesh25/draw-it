@@ -45,7 +45,7 @@ export function WordPickOverlay({
   };
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-lg bg-linear-to-b from-ink/85 to-ink/95 px-4 py-5 text-paper backdrop-blur-sm sm:gap-5 sm:px-6">
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-linear-to-b from-ink/85 to-ink/95 px-4 py-5 text-paper backdrop-blur-sm sm:gap-5 sm:px-6">
       {isDrawer ? (
         <>
           <h2 className="font-display text-2xl text-paper sm:text-3xl">Pick a word</h2>
@@ -85,7 +85,7 @@ export function WordPickOverlay({
       ) : (
         <>
           <h2 className="text-center font-display text-2xl text-paper sm:text-3xl">
-            {drawer?.name ?? 'Someone'} is choosing&hellip;
+            {drawer?.name ?? 'Someone'}  is choosing&hellip;
           </h2>
           <Loader2 className="h-7 w-7 animate-spin text-paper/80" />
         </>
