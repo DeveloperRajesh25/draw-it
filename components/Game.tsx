@@ -300,8 +300,12 @@ export function Game({
               variant="compact"
             />
           </div>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-paper">
-            <ChatList messages={chatMessages} meId={meId} />
+          <div className="relative min-h-0 min-w-0 flex-1 bg-paper">
+            <ChatList
+              messages={chatMessages}
+              meId={meId}
+              className="absolute inset-0"
+            />
           </div>
         </div>
 
