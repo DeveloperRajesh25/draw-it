@@ -98,10 +98,12 @@ export async function POST(
           .from('rooms')
           .update({ last_activity_at: new Date().toISOString() })
           .eq('code', code);
-        // Do this synchronously so the sender's broadcastStateRefresh (fired
-        // when they receive our response) tells peers to fetch a snapshot
-        // that already shows the round-end transition.
-        await maybeEndDrawingEarly(sb, code);
+        // Fire-and-forget: doing this synchronously delays the sender's
+        // "correct!" verdict by an extra ~100-300ms of DB roundtrips, which
+        // is the dominant source of the white→green flicker they see. Peers
+        // pick up round-end via postgres_changes + the phase watchdog within
+        // a few hundred ms — fine for the "everyone guessed" transition.
+        void maybeEndDrawingEarly(sb, code);
 
         return NextResponse.json({
           ok: true,

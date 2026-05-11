@@ -19,29 +19,37 @@ type ChatState = {
 /**
  * Chat send logic with optimistic local-echo and anti-spoiler filtering.
  *
- * Send flow:
- *   1. User submits → we generate a nanoid and append a 'normal' message to
- *      the store immediately. The input clears and the list scrolls.
- *   2. We POST to /api/rooms/[code]/chat with the same id.
- *   3. Server inserts the row with that id (and the canonical type if it was
- *      an exact/close guess). The Realtime echo arrives within ~100ms and
- *      the store upserts by id — replacing our optimistic copy in place.
- *   4. On non-OK response we roll back the optimistic message.
+ * Two paths:
  *
- * Returns a state bundle so the list and input can render in different parts
- * of the DOM while sharing the same controlled text + send action.
+ *   A. NOT in a guess context (lobby, word-pick, round-end, or you've already
+ *      guessed correctly). The message can't be a guess, so we optimistically
+ *      append it as 'normal' immediately for instant local feedback. Server
+ *      response is just a sanity check; on failure we roll back.
+ *
+ *   B. In a guess context (drawing phase, not the drawer, haven't guessed yet).
+ *      The text could be a correct guess, a close guess, or normal chat — and
+ *      we don't know the word locally (anti-cheat). If we appended as 'normal'
+ *      first, the user would see their guess flash white before turning green,
+ *      which feels laggy. Instead we hold the optimistic append and wait for
+ *      the server verdict (~100-200ms), then append once with the right type.
+ *      Input clearing + chatSend sfx give immediate "sent" feedback.
+ *
+ * In both cases the server inserts a chat row with the same id; the Realtime
+ * echo upserts by id and is a no-op against whatever we appended locally.
  */
 export function useChat({
   meId,
   meName,
   meHasGuessed,
   canChat,
+  isPossibleGuess,
   roomCode,
 }: {
   meId: string;
   meName: string;
   meHasGuessed: boolean;
   canChat: boolean;
+  isPossibleGuess: boolean;
   roomCode: string;
 }): ChatState {
   const [text, setText] = React.useState('');
@@ -54,6 +62,7 @@ export function useChat({
     const value = text.trim();
     if (!value || !canChat) return;
     const id = nanoid();
+    const createdAt = new Date().toISOString();
     const optimistic: ChatMessage = {
       id,
       roomCode,
@@ -61,9 +70,11 @@ export function useChat({
       playerName: meName || 'You',
       text: value,
       type: 'normal',
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
-    appendChat(optimistic);
+    if (!isPossibleGuess) {
+      appendChat(optimistic);
+    }
     sfx.chatSend();
     const safeToFanOutImmediately = meHasGuessed;
     if (safeToFanOutImmediately) {
@@ -78,7 +89,7 @@ export function useChat({
           body: JSON.stringify({ id, playerId: meId, text: value }),
         });
         if (!res.ok) {
-          removeChat(id);
+          if (!isPossibleGuess) removeChat(id);
           return;
         }
         const j = (await res.json().catch(() => ({}))) as {
@@ -93,7 +104,7 @@ export function useChat({
             playerName: meName || 'You',
             text: value,
             type: 'correct-guess',
-            createdAt: optimistic.createdAt,
+            createdAt,
           };
           appendChat(upgraded);
           broadcastChat(roomCode, upgraded);
@@ -106,15 +117,22 @@ export function useChat({
             playerName: meName || 'You',
             text: value,
             type: 'close-guess',
-            createdAt: optimistic.createdAt,
+            createdAt,
           };
           appendChat(upgraded);
           sfx.closeGuess();
-        } else if (!safeToFanOutImmediately) {
-          broadcastChat(roomCode, optimistic);
+        } else {
+          // Plain chat. If we deferred the optimistic append (guess context),
+          // do it now. Then broadcast iff we didn't already broadcast above.
+          if (isPossibleGuess) {
+            appendChat(optimistic);
+          }
+          if (!safeToFanOutImmediately) {
+            broadcastChat(roomCode, optimistic);
+          }
         }
       } catch {
-        removeChat(id);
+        if (!isPossibleGuess) removeChat(id);
       }
     })();
   };

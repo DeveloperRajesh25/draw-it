@@ -168,11 +168,16 @@ export function Game({
       ? TIMING.WORD_PICK_SECONDS
       : TIMING.ROUND_END_SECONDS;
 
+  // Possible-guess context: in drawing phase, not the drawer, haven't guessed
+  // yet. Drives the optimistic-append strategy in useChat — see Chat.tsx.
+  const isPossibleGuess = inDrawing && !isDrawer && !me?.hasGuessed;
+
   const chatState = useChat({
     meId,
     meName: me?.name ?? 'You',
     meHasGuessed: !!me?.hasGuessed,
     canChat,
+    isPossibleGuess,
     roomCode: room.code,
   });
 
