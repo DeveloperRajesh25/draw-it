@@ -27,6 +27,10 @@ export default function HomeClient() {
     if (s?.roomCode && isValidRoomCode(s.roomCode)) {
       // Don't redirect — show a banner so the user can choose to rejoin or stay home.
     }
+    // Fire-and-forget janitor: every fresh visitor sweeps rooms/players older
+    // than 3 hours so nothing piles up. Replaces the Vercel cron we couldn't
+    // ship on the free tier. keepalive lets the request survive navigation.
+    fetch('/api/cleanup', { method: 'POST', keepalive: true }).catch(() => {});
   }, []);
 
   if (!player) return null;

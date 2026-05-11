@@ -156,5 +156,12 @@ BEGIN
   DELETE FROM rooms
   WHERE NOT EXISTS (SELECT 1 FROM players WHERE players.room_code = rooms.code)
     AND last_activity_at < NOW() - INTERVAL '30 minutes';
+
+  -- Hard-delete any room inactive for >3 hours, regardless of player rows.
+  -- ON DELETE CASCADE on the child tables (players, strokes, chat_messages,
+  -- hint_reveals) wipes their data automatically. This is the safety net
+  -- that prevents abandoned rooms from accumulating forever.
+  DELETE FROM rooms
+  WHERE last_activity_at < NOW() - INTERVAL '3 hours';
 END;
 $$ LANGUAGE plpgsql;
