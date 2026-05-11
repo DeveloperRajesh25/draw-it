@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { adminClient } from '@/lib/supabase/server';
 import { PlayerOnlySchema } from '@/lib/schemas';
 import { bumpRoomActivity, handleZod, loadRoom, readJson } from '@/lib/api-helpers';
+import { maybeEndDrawingEarly } from '@/lib/transitions';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,10 @@ export async function POST(
         .update({ phase_ends_at: new Date().toISOString() })
         .eq('code', code)
         .eq('phase', 'drawing');
+    } else if (room.phase === 'drawing') {
+      // A non-drawer left — if the remaining active guessers had all already
+      // guessed, end the round now instead of waiting on the timer.
+      void maybeEndDrawingEarly(sb, code);
     }
 
     // If the room is now empty, delete it. Cascade removes strokes/chat/hints.

@@ -42,7 +42,7 @@ export function PlayerList({
                 'flex shrink-0 items-center gap-1 rounded-md border-2 border-ink bg-paper px-1.5 py-0.5 shadow-doodle-sm',
                 isDrawer && 'bg-mustard',
                 p.hasGuessed && !isDrawer && 'bg-mint/60',
-                !p.connected && 'opacity-60',
+                !p.connected && 'opacity-40 grayscale',
               )}
             >
               <span className="font-mono text-[9px] text-ink-soft">#{i + 1}</span>
@@ -86,7 +86,7 @@ export function PlayerList({
                 'flex items-center gap-1.5 border-b border-ink/10 px-1.5 py-1 last:border-b-0',
                 isDrawer && 'bg-mustard/70',
                 p.hasGuessed && !isDrawer && 'bg-mint/40',
-                !p.connected && 'opacity-60',
+                !p.connected && 'opacity-40 grayscale',
               )}
             >
               <span className="w-4 shrink-0 text-center font-mono text-[10px] text-ink-soft">
@@ -132,7 +132,7 @@ export function PlayerList({
               'flex items-center gap-3 rounded-lg border-2 border-ink bg-paper p-2 shadow-doodle-sm',
               isDrawer && 'bg-mustard',
               p.hasGuessed && !isDrawer && 'bg-mint/60',
-              !p.connected && 'opacity-60',
+              !p.connected && 'opacity-40 grayscale',
             )}
           >
             <span className="w-5 text-center font-mono text-sm text-ink-soft">{i + 1}</span>

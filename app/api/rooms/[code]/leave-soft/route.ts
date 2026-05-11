@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabase/server';
 import { handleZod, readJson } from '@/lib/api-helpers';
 import { PlayerOnlySchema } from '@/lib/schemas';
+import { maybeEndDrawingEarly } from '@/lib/transitions';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,11 @@ export async function POST(
       .update({ connected: false, last_seen_at: new Date().toISOString() })
       .eq('room_code', code)
       .eq('id', playerId);
+
+    // If this player was the only one we were still waiting on (e.g. they
+    // closed the tab while every other active guesser had already guessed),
+    // end the round now rather than burning the rest of the timer.
+    void maybeEndDrawingEarly(sb, code);
 
     return NextResponse.json({ ok: true });
   } catch (e) {

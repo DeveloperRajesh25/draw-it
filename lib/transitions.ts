@@ -512,7 +512,9 @@ export async function maybeEndDrawingEarly(
   const room = mapRoomRow(roomRow);
   if (room.phase !== 'drawing') return;
   const players = await getOrderedPlayers(sb, roomCode);
-  const guessers = players.filter((p) => p.id !== room.drawerId);
+  // Only consider currently-connected players — don't keep the round open
+  // waiting on someone who closed the tab.
+  const guessers = players.filter((p) => p.id !== room.drawerId && p.connected);
   if (guessers.length === 0) return;
   const allGuessed = guessers.every((p) => p.hasGuessed);
   if (!allGuessed) return;
