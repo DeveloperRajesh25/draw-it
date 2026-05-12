@@ -292,6 +292,7 @@ export function Game({
           )}
           <div className="canvas-frame relative mx-auto w-full">
             <Canvas
+              key={`${room.round}-${room.turnInRound}`}
               roomCode={room.code}
               strokes={strokes}
               canDraw={canDraw}

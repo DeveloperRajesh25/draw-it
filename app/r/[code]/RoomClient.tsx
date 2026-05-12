@@ -127,6 +127,38 @@ function RoomShell({
     }
   }, [state, onMissing]);
 
+  // Back-button confirmation. The browser pops a history entry on back press
+  // and there's no way to cancel it post-hoc, so we push a sentinel entry on
+  // mount and intercept popstate: confirm → soft-leave (mark inactive, keep
+  // the player row so they can rejoin) and navigate to home; cancel → push
+  // the sentinel back so we stay put.
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sentinel = { __drawItRoom: code };
+    window.history.pushState(sentinel, '', window.location.href);
+    const onPop = () => {
+      const ok = window.confirm(
+        'Leave the room? You will be marked inactive — you can rejoin later.',
+      );
+      if (ok) {
+        try {
+          const blob = new Blob([JSON.stringify({ playerId })], {
+            type: 'application/json',
+          });
+          navigator.sendBeacon(
+            `/api/rooms/${encodeURIComponent(code)}/leave-soft`,
+            blob,
+          );
+        } catch {/* ignore */}
+        window.location.assign('/');
+      } else {
+        window.history.pushState(sentinel, '', window.location.href);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [code, playerId]);
+
   // Sound on phase transitions. We compare the current phase against the
   // *previous* one so we can distinguish "game just started" (lobby → word-
   // pick) from "next round" (round-end → word-pick).

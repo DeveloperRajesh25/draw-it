@@ -65,7 +65,9 @@ export async function transitionLobbyToWordPick(
   const players = await getOrderedPlayers(sb, room.code);
   if (players.length < 2) return { ok: false, reason: 'Need at least 2 players' };
 
-  const drawer = players[0];
+  // Skip disconnected players when picking the first drawer — they can't
+  // pick a word right now, so we'd just burn the timer waiting on them.
+  const drawer = players.find((p) => p.connected) ?? players[0];
   const options = pickWordOptions({
     language: room.settings.language,
     count: room.settings.wordCount,
@@ -264,9 +266,13 @@ export async function transitionRoundEndToNext(
   room: Room,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const players = await getOrderedPlayers(sb, room.code);
-  const order = players.map((p) => p.id);
-  if (order.length < 2) {
-    // Lost too many players — bail back to lobby.
+  // Turn rotation only includes currently-connected players. A disconnected
+  // player should not be made the drawer (the room would just stall waiting
+  // on them to pick a word).
+  const activePlayers = players.filter((p) => p.connected);
+  const order = activePlayers.map((p) => p.id);
+  if (activePlayers.length < 2) {
+    // Lost too many active players — bail back to lobby.
     return await forceBackToLobby(sb, room);
   }
 

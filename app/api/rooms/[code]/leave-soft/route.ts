@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabase/server';
-import { handleZod, readJson } from '@/lib/api-helpers';
+import { handleZod, loadRoom, readJson } from '@/lib/api-helpers';
 import { PlayerOnlySchema } from '@/lib/schemas';
 import { maybeEndDrawingEarly } from '@/lib/transitions';
 
@@ -29,10 +29,21 @@ export async function POST(
       .eq('room_code', code)
       .eq('id', playerId);
 
-    // If this player was the only one we were still waiting on (e.g. they
-    // closed the tab while every other active guesser had already guessed),
-    // end the round now rather than burning the rest of the timer.
-    void maybeEndDrawingEarly(sb, code);
+    const { room } = await loadRoom(sb, code);
+    if (room && room.phase === 'drawing' && room.drawerId === playerId) {
+      // Drawer closed the tab — don't make the rest of the room wait for
+      // the timer to expire. Forcing phase_ends_at to now lets the next
+      // tick advance us to round-end on any client.
+      await sb
+        .from('rooms')
+        .update({ phase_ends_at: new Date().toISOString() })
+        .eq('code', code)
+        .eq('phase', 'drawing');
+    } else {
+      // A non-drawer dropped off — if the remaining active guessers had
+      // already guessed, end the round now.
+      await maybeEndDrawingEarly(sb, code);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

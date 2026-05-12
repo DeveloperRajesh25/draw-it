@@ -98,18 +98,26 @@ export async function POST(
           .from('rooms')
           .update({ last_activity_at: new Date().toISOString() })
           .eq('code', code);
-        // Fire-and-forget: doing this synchronously delays the sender's
-        // "correct!" verdict by an extra ~100-300ms of DB roundtrips, which
-        // is the dominant source of the white→green flicker they see. Peers
-        // pick up round-end via postgres_changes + the phase watchdog within
-        // a few hundred ms — fine for the "everyone guessed" transition.
-        void maybeEndDrawingEarly(sb, code);
+        // Await so the rooms row is actually advanced to round-end before we
+        // respond. On Vercel the function can be frozen after the response is
+        // sent, killing fire-and-forget work — which is why the round used to
+        // sit on the timer even when everyone had already guessed.
+        await maybeEndDrawingEarly(sb, code);
 
+        // Tell the caller whether the round was just ended by this guess so
+        // the client can force a snapshot refetch immediately instead of
+        // waiting on postgres_changes (which is often laggy/dropped).
+        const { data: postRoom } = await sb
+          .from('rooms')
+          .select('phase')
+          .eq('code', code)
+          .maybeSingle();
         return NextResponse.json({
           ok: true,
           correct: true,
           points: pts,
           messageId,
+          roundEnded: postRoom?.phase === 'round-end',
         });
       }
 

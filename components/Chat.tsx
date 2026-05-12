@@ -6,7 +6,7 @@ import { CHAT_MAX_LENGTH } from '@/lib/constants';
 import type { ChatMessage } from '@/lib/types';
 import { sfx } from '@/lib/sound';
 import { useRoomStore } from '@/lib/store';
-import { broadcastChat, broadcastStateRefresh } from '@/lib/use-room';
+import { broadcastChat, broadcastStateRefresh, refetchRoomSnapshot } from '@/lib/use-room';
 
 type ChatState = {
   text: string;
@@ -95,6 +95,7 @@ export function useChat({
         const j = (await res.json().catch(() => ({}))) as {
           correct?: boolean;
           close?: boolean;
+          roundEnded?: boolean;
         };
         if (j.correct) {
           const upgraded: ChatMessage = {
@@ -109,6 +110,11 @@ export function useChat({
           appendChat(upgraded);
           broadcastChat(roomCode, upgraded);
           broadcastStateRefresh(roomCode);
+          // If my guess ended the round, also refetch locally — the broadcast
+          // above is `self: false` so it doesn't bring me along.
+          if (j.roundEnded) {
+            void refetchRoomSnapshot(roomCode, meId);
+          }
         } else if (j.close) {
           const upgraded: ChatMessage = {
             id,
