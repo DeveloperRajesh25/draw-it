@@ -12,6 +12,7 @@ import { WordPattern } from './WordPattern';
 import { WordPickOverlay } from './WordPick';
 import { leaveRoom } from '@/lib/leave';
 import { sfx } from '@/lib/sound';
+import { broadcastStateRefresh, refetchRoomSnapshot } from '@/lib/use-room';
 import type { ChatMessage, HintReveal, Player, Room, Stroke, Tool } from '@/lib/types';
 import { COLORS, BRUSH_SIZES, TIMING } from '@/lib/constants';
 
@@ -50,6 +51,7 @@ export function Game({
   const [tool, setTool] = React.useState<Tool>('brush');
   const [color, setColor] = React.useState<string>(COLORS[1]); // default black
   const [size, setSize] = React.useState<number>(BRUSH_SIZES[1]);
+  const [keyboardInset, setKeyboardInset] = React.useState(0);
 
   const lastRevealKey = React.useRef<string>('');
 
@@ -139,11 +141,15 @@ export function Game({
     if (!canDraw) return;
     if (!window.confirm('Clear the canvas?')) return;
     sfx.clear();
-    await fetch(`/api/rooms/${room.code}/strokes`, {
+    const res = await fetch(`/api/rooms/${room.code}/strokes`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId: meId }),
     });
+    if (res.ok) {
+      void refetchRoomSnapshot(room.code, meId);
+      broadcastStateRefresh(room.code);
+    }
   };
 
   const [leaving, setLeaving] = React.useState(false);
@@ -208,6 +214,7 @@ export function Game({
     const update = () => {
       const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       root.style.setProperty('--keyboard-inset', `${inset}px`);
+      setKeyboardInset(inset);
     };
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
@@ -216,6 +223,7 @@ export function Game({
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
       root.style.removeProperty('--keyboard-inset');
+      setKeyboardInset(0);
     };
   }, []);
 
@@ -262,7 +270,13 @@ export function Game({
           the chat list doesn't sit behind it. lg: 3-col grid (players
           sidebar | canvas | chat sidebar) — input lives inside the chat
           column on desktop, no reserved space needed. */}
-      <div className="flex min-h-0 flex-1 flex-col pb-11 sm:mt-2 sm:gap-2 lg:grid lg:grid-cols-[220px_1fr_300px] lg:gap-3 lg:pb-0">
+      <div
+        className="flex min-h-0 flex-1 flex-col pb-11 sm:mt-2 sm:gap-2 lg:grid lg:grid-cols-[220px_1fr_300px] lg:gap-3 lg:pb-0"
+        style={{
+          paddingBottom: keyboardInset > 0 ? `${keyboardInset + 44}px` : undefined,
+          transition: 'padding-bottom 120ms ease',
+        }}
+      >
         {/* Players sidebar (desktop only) */}
         <div className="hidden lg:order-1 lg:block lg:overflow-y-auto">
           <div className="lg:sticky lg:top-0">

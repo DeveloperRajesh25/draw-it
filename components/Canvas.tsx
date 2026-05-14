@@ -96,6 +96,10 @@ export function Canvas(props: Props) {
   // ===== Whenever props.strokes changes, redraw base =====
   React.useEffect(() => {
     redrawBase();
+    if (props.strokes.length === 0) {
+      // Canvas was cleared — wipe all preview state so no ghost strokes remain.
+      previewStateRef.current.clear();
+    }
     // Drop preview state for strokes now committed.
     for (const s of props.strokes) {
       if (previewStateRef.current.has(s.id)) previewStateRef.current.delete(s.id);
