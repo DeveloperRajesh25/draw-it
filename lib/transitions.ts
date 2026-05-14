@@ -5,6 +5,7 @@ import { mapPlayerRow, mapRoomRow } from './supabase/mappers';
 import { drawerPoints } from './scoring';
 import { applyRevealedLetters, buildHintSchedule, makeWordPattern, pickWordOptions } from './words';
 import { TIMING } from './constants';
+import { clearTurnCache, setTurnCache } from './redis';
 import type { Room } from './types';
 
 // =====================================================================
@@ -141,6 +142,7 @@ export async function transitionWordPickToDrawing(
 
   const pattern = makeWordPattern(word, room.settings.wordMode);
 
+  const phaseEndsAtMs = startedAtMs + room.settings.drawTimeSeconds * 1000;
   const { data, error } = await sb
     .from('rooms')
     .update({
@@ -151,7 +153,7 @@ export async function transitionWordPickToDrawing(
       hint_schedule: schedule,
       hint_letters_pending: pendingLetters,
       phase_started_at: new Date(startedAtMs).toISOString(),
-      phase_ends_at: new Date(startedAtMs + room.settings.drawTimeSeconds * 1000).toISOString(),
+      phase_ends_at: new Date(phaseEndsAtMs).toISOString(),
       used_words: Array.from(new Set([...(room.usedWords ?? []), word])),
       last_activity_at: nowISO(),
     })
@@ -165,6 +167,23 @@ export async function transitionWordPickToDrawing(
     return { ok: false, reason: `DB error: ${error.message}` };
   }
   if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
+
+  // Prime the Redis hot cache so the next chat verdict can verify a correct
+  // guess without any Supabase round-trips. See lib/redis.ts.
+  const { count: guesserCount } = await sb
+    .from('players')
+    .select('id', { count: 'exact', head: true })
+    .eq('room_code', room.code)
+    .neq('id', room.drawerId ?? '');
+  void setTurnCache(room.code, {
+    round: room.round,
+    turn: room.turnInRound,
+    word,
+    drawerId: room.drawerId,
+    phaseEndsAtMs,
+    drawTimeSeconds: room.settings.drawTimeSeconds,
+    totalGuessers: Math.max(1, guesserCount ?? 1),
+  });
   return { ok: true };
 }
 
@@ -245,6 +264,10 @@ export async function transitionDrawingToRoundEnd(
     return { ok: false, reason: `DB error: ${error.message}` };
   }
   if (!data) return { ok: false, reason: 'Race lost (phase already advanced)' };
+
+  // Drop the hot cache — its word/order data is no longer valid for the next
+  // turn, and we don't want stale "you already guessed" claims to leak across.
+  void clearTurnCache(room.code, room.round, room.turnInRound);
 
   const wordReveal = room.word ?? '???';
   const msg =
@@ -418,6 +441,7 @@ async function forceBackToLobby(
   sb: SupabaseClient,
   room: Room,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  void clearTurnCache(room.code, room.round, room.turnInRound);
   await sb.from('strokes').delete().eq('room_code', room.code);
   await sb.from('hint_reveals').delete().eq('room_code', room.code);
   const { data, error } = await sb
