@@ -180,17 +180,20 @@ export function ChatList({
 export function ChatInput({
   chat,
   className,
+  placeholder,
 }: {
   chat: ChatState;
   className?: string;
+  placeholder?: string;
 }) {
+  const defaultPlaceholder = chat.canChat ? 'Type your message here...' : 'Chat is locked';
   return (
     <form onSubmit={chat.send} className={cn('chat-input-bar bg-paper-dark', className)}>
       <input
         ref={chat.inputRef}
         value={chat.text}
         onChange={(e) => chat.setText(e.target.value.slice(0, CHAT_MAX_LENGTH))}
-        placeholder={chat.canChat ? 'Type your guess here...' : 'Chat is locked'}
+        placeholder={placeholder ?? defaultPlaceholder}
         disabled={!chat.canChat}
         inputMode="text"
         autoCapitalize="off"

@@ -1,12 +1,13 @@
 'use client';
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Play, Settings as SettingsIcon } from 'lucide-react';
+import { Play, Share2 } from 'lucide-react';
 import { Button } from './ui/Button';
-import { Card, CardBody, CardHeader } from './ui/Card';
+import { Card, CardBody } from './ui/Card';
 import { Input } from './ui/Input';
 import { PlayerList } from './PlayerList';
 import { RoomPill } from './RoomPill';
+import { ChatInput, useChat } from './Chat';
 import type { Player, Room, RoomSettings, WordMode } from '@/lib/types';
 import { SETTINGS_LIMITS } from '@/lib/constants';
 import { leaveRoom } from '@/lib/leave';
@@ -27,7 +28,16 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
   const [leaving, setLeaving] = React.useState(false);
   const [kickingId, setKickingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
-  const [showSettings, setShowSettings] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const chat = useChat({
+    meId,
+    meName: me?.name || 'You',
+    meHasGuessed: true,
+    canChat: true,
+    isPossibleGuess: false,
+    roomCode: room.code,
+  });
 
   const startGame = async () => {
     setError(null);
@@ -44,16 +54,7 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
         setBusy(false);
         return;
       }
-      // Server has already advanced phase to 'word-pick'. Pull the new snapshot
-      // immediately so we don't wait on Realtime CDC. Keep busy=true — this
-      // component will unmount when phase changes.
       await refetchRoomSnapshot(room.code, meId);
-      // Push the same wake-up to every other client. Without this, peers
-      // depend on the rooms postgres_changes event arriving — which can lag
-      // or drop on flaky connections — and stay stuck in the lobby until
-      // they refresh. The broadcast goes peer-to-peer over the WebSocket.
-      // (Game-start sound is played by RoomClient on phase transition, so
-      // both host and peers hear it.)
       broadcastStateRefresh(room.code);
     } catch {
       setError('Could not start');
@@ -92,86 +93,104 @@ export function Lobby({ room, players, meId, connectedIds }: Props) {
     }
   };
 
+  const copyInviteLink = () => {
+    const inviteUrl = `${window.location.origin}/?code=${room.code}`;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <main className="mx-auto max-w-4xl px-5 pb-16 pt-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-4xl text-ink">Lobby</h1>
-          <p className="text-sm text-ink-soft">Waiting for players. Share the code below.</p>
-        </div>
+    <main className="mx-auto h-screen max-w-md px-4 py-3 flex flex-col">
+      {/* Header with room code */}
+      <div className="mb-3 shrink-0">
+        <h1 className="font-display text-2xl text-ink mb-1">WAITING</h1>
         <RoomPill code={room.code} />
       </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_360px]">
-        <div className="grid gap-5">
-          <Card>
-            <CardHeader className="flex items-center justify-between">
-              <h2 className="font-display text-2xl">Players ({players.length})</h2>
-              {me && <span className="text-xs text-ink-faint">you are <b>{me.name}</b></span>}
-            </CardHeader>
-            <CardBody>
-              <PlayerList
-                players={players}
-                drawerId={null}
-                hostId={room.hostId}
-                meId={meId}
-                connectedIds={connectedIds}
-                onKick={isHost ? kick : undefined}
-                kickingId={kickingId}
-              />
-            </CardBody>
-          </Card>
+      {/* Settings Panel - Always visible */}
+      <Card className="mb-3 shrink-0 shadow-none border-ink">
+        <CardBody className="py-3">
+          <SettingsView
+            roomCode={room.code}
+            settings={room.settings}
+            isHost={isHost}
+            meId={meId}
+            expanded={true}
+          />
+        </CardBody>
+      </Card>
 
-          <Card>
-            <CardBody className="flex flex-wrap items-center gap-3">
-              {isHost ? (
-                <Button
-                  onClick={startGame}
-                  disabled={busy || players.length < 2}
-                  loading={busy}
-                  size="lg"
-                  variant="accent"
-                >
-                  {!busy && <Play className="h-4 w-4" />}
-                  {busy ? 'Starting…' : players.length < 2 ? 'Need 2+ players' : 'Start game'}
-                </Button>
-              ) : (
-                <p className="text-sm text-ink-soft">Waiting for the host to start…</p>
-              )}
-              <Button variant="ghost" onClick={leave} disabled={leaving} loading={leaving}>
-                {leaving ? 'Leaving…' : 'Leave'}
-              </Button>
-              {error && <span className="text-sm text-[hsl(0_70%_45%)]">{error}</span>}
-            </CardBody>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <h2 className="font-display text-2xl">Settings</h2>
-            {!isHost && <span className="text-xs text-ink-faint">Host only</span>}
-            {isHost && (
-              <button
-                type="button"
-                className="press-doodle text-ink-soft"
-                onClick={() => setShowSettings((v) => !v)}
-                aria-label="Toggle settings"
-              >
-                <SettingsIcon className="h-5 w-5" />
-              </button>
-            )}
-          </CardHeader>
-          <CardBody>
-            <SettingsView
-              roomCode={room.code}
-              settings={room.settings}
-              isHost={isHost}
+      {/* Players Section */}
+      <div className="mb-3 grow overflow-hidden flex flex-col min-h-0">
+        <h2 className="font-display text-sm text-ink mb-1.5 shrink-0">Players ({players.length})</h2>
+        <Card className="grow flex flex-col min-h-0 shadow-none border-ink">
+          <CardBody className="grow overflow-y-auto py-2 px-2">
+            <PlayerList
+              players={players}
+              drawerId={null}
+              hostId={room.hostId}
               meId={meId}
-              expanded={showSettings || !isHost}
+              connectedIds={connectedIds}
+              onKick={isHost ? kick : undefined}
+              kickingId={kickingId}
+              variant="compact"
             />
           </CardBody>
         </Card>
       </div>
+
+      {/* Action Buttons */}
+      <div className="mb-2 flex gap-1.5 shrink-0">
+        <Button
+          onClick={copyInviteLink}
+          variant="accent"
+          size="lg"
+          className="flex-1 text-xs h-9"
+        >
+          <Share2 className="h-3.5 w-3.5" />
+          {copied ? 'Copied!' : 'Invite'}
+        </Button>
+        {isHost && (
+          <Button
+            onClick={startGame}
+            disabled={busy || players.length < 2}
+            loading={busy}
+            size="lg"
+            variant="accent"
+            className="flex-1 text-xs h-9"
+          >
+            {!busy && <Play className="h-3.5 w-3.5" />}
+            {busy ? 'Starting…' : 'Start'}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          onClick={leave}
+          disabled={leaving}
+          loading={leaving}
+          className="flex-1 text-xs h-9"
+        >
+          {leaving ? 'Leaving…' : 'Leave'}
+        </Button>
+      </div>
+
+      {/* Chat Area */}
+      <Card className="shrink-0 shadow-none border-ink">
+        <CardBody className="p-0">
+          <ChatInput
+            chat={chat}
+            className="rounded-b-lg"
+            placeholder={chat.canChat ? 'Type your message here...' : 'Chat is locked'}
+          />
+        </CardBody>
+      </Card>
+
+      {error && (
+        <div className="mt-2 rounded-md bg-[hsl(0_70%_60%)] p-2 text-sm text-white">
+          {error}
+        </div>
+      )}
     </main>
   );
 }
@@ -216,91 +235,60 @@ function SettingsView({
   }
 
   return (
-    <div className="grid gap-3">
-      <NumField
-        label="Max players"
-        value={settings.maxPlayers}
-        min={SETTINGS_LIMITS.maxPlayers.min}
-        max={SETTINGS_LIMITS.maxPlayers.max}
-        step={1}
-        disabled={!isHost || busy}
-        onChange={(v) => update({ maxPlayers: v })}
-      />
-      <NumField
-        label="Rounds"
-        value={settings.rounds}
-        min={SETTINGS_LIMITS.rounds.min}
-        max={SETTINGS_LIMITS.rounds.max}
-        step={1}
-        disabled={!isHost || busy}
-        onChange={(v) => update({ rounds: v })}
-      />
-      <NumField
-        label="Draw time (s)"
-        value={settings.drawTimeSeconds}
-        min={SETTINGS_LIMITS.drawTimeSeconds.min}
-        max={SETTINGS_LIMITS.drawTimeSeconds.max}
-        step={10}
-        disabled={!isHost || busy}
-        onChange={(v) => update({ drawTimeSeconds: v })}
-      />
-      <NumField
-        label="Word options"
-        value={settings.wordCount}
-        min={SETTINGS_LIMITS.wordCount.min}
-        max={SETTINGS_LIMITS.wordCount.max}
-        step={1}
-        disabled={!isHost || busy}
-        onChange={(v) => update({ wordCount: v })}
-      />
-      <NumField
-        label="Hints"
-        value={settings.hints}
-        min={SETTINGS_LIMITS.hints.min}
-        max={SETTINGS_LIMITS.hints.max}
-        step={1}
-        disabled={!isHost || busy}
-        onChange={(v) => update({ hints: v })}
-      />
+    <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-2">
+        <NumField
+          label="Players"
+          value={settings.maxPlayers}
+          min={SETTINGS_LIMITS.maxPlayers.min}
+          max={SETTINGS_LIMITS.maxPlayers.max}
+          step={1}
+          disabled={!isHost || busy}
+          onChange={(v) => update({ maxPlayers: v })}
+        />
+        <NumField
+          label="Rounds"
+          value={settings.rounds}
+          min={SETTINGS_LIMITS.rounds.min}
+          max={SETTINGS_LIMITS.rounds.max}
+          step={1}
+          disabled={!isHost || busy}
+          onChange={(v) => update({ rounds: v })}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <NumField
+          label="Draw time"
+          value={settings.drawTimeSeconds}
+          min={SETTINGS_LIMITS.drawTimeSeconds.min}
+          max={SETTINGS_LIMITS.drawTimeSeconds.max}
+          step={10}
+          disabled={!isHost || busy}
+          onChange={(v) => update({ drawTimeSeconds: v })}
+        />
+        <NumField
+          label="Hints"
+          value={settings.hints}
+          min={SETTINGS_LIMITS.hints.min}
+          max={SETTINGS_LIMITS.hints.max}
+          step={1}
+          disabled={!isHost || busy}
+          onChange={(v) => update({ hints: v })}
+        />
+      </div>
       <Field label="Word mode">
         <select
           disabled={!isHost || busy}
           value={settings.wordMode}
           onChange={(e) => update({ wordMode: e.target.value as WordMode })}
-          className="h-10 w-full rounded-md border-2 border-ink bg-paper px-3 text-sm shadow-doodle-soft focus:outline-none focus:ring-2 focus:ring-coral"
+          className="h-9 w-full rounded-md border-2 border-ink bg-paper px-2 text-xs shadow-doodle-soft focus:outline-none focus:ring-2 focus:ring-coral"
         >
           <option value="normal">Normal</option>
-          <option value="hidden">Hidden (no letter count)</option>
-          <option value="combination">Combination (two words)</option>
+          <option value="hidden">Hidden</option>
+          <option value="combination">Combination</option>
         </select>
       </Field>
-      <Field label="Custom words (comma or newline)">
-        <textarea
-          disabled={!isHost || busy}
-          defaultValue={settings.customWords.join(', ')}
-          onBlur={(e) => {
-            const list = e.target.value
-              .split(/[,\n]/)
-              .map((w) => w.trim())
-              .filter(Boolean)
-              .slice(0, 200);
-            update({ customWords: list });
-          }}
-          rows={3}
-          className="w-full rounded-md border-2 border-ink bg-paper px-3 py-2 text-sm shadow-doodle-soft focus:outline-none focus:ring-2 focus:ring-coral"
-          placeholder="optional — your own words"
-        />
-      </Field>
-      <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-ink-soft">
-        <input
-          type="checkbox"
-          disabled={!isHost || busy}
-          checked={settings.useOnlyCustomWords}
-          onChange={(e) => update({ useOnlyCustomWords: e.target.checked })}
-          className="h-4 w-4"
-        />
-        Use only my custom words
-      </label>
+      {!isHost && <span className="text-xs text-ink-faint">Host only</span>}
     </div>
   );
 }
