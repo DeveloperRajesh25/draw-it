@@ -202,28 +202,95 @@ export function Game({
     };
   }, []);
 
-  // Keyboard inset: with `interactive-widget=overlays-content`, the on-screen
-  // keyboard overlays the page without resizing the layout viewport. We
-  // measure the gap between the layout viewport and the visual viewport and
-  // expose it as a CSS variable so the chat input can translate above the
-  // keyboard while everything else stays put.
+  // Keyboard handling.
+  //
+  // Goal: chat input always visible above the on-screen keyboard, exactly
+  // like WhatsApp / Messenger / Skribbl on mobile.
+  //
+  // Primary path — we ask the browser to resize the layout viewport when
+  // the keyboard opens (`interactive-widget=resizes-content` in
+  // layout.tsx + VirtualKeyboard API below for Chromium). Once the
+  // layout shrinks, anything pinned to `position: fixed; bottom: 0` is
+  // naturally just above the keyboard. No JS positioning needed.
+  //
+  // Fallback path — the JS effect below measures the keyboard via
+  // visualViewport for browsers that ignore both signals (or for any
+  // residual gap), and exposes the inset as `--keyboard-inset` so the
+  // chat input can translate up the rest of the way if needed.
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
+    if (typeof window === 'undefined') return;
+
+    // Chromium: ensure the keyboard shrinks the layout viewport even if
+    // the meta tag is being overridden by some Android browser quirk.
+    const vk = (
+      navigator as Navigator & {
+        virtualKeyboard?: { overlaysContent: boolean };
+      }
+    ).virtualKeyboard;
+    if (vk) {
+      vk.overlaysContent = false;
+    }
+
     const vv = window.visualViewport;
     const root = document.documentElement;
+    let raf = 0;
+    const pollTimers: ReturnType<typeof setTimeout>[] = [];
+
     const update = () => {
-      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      const visualDelta = vv
+        ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+        : 0;
+      // <100px deltas are URL-bar collapse / safe-area noise, not a keyboard.
+      const inset = visualDelta > 100 ? visualDelta : 0;
       root.style.setProperty('--keyboard-inset', `${inset}px`);
       setKeyboardInset(inset);
     };
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
+
+    const scheduleUpdate = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') return;
+      // visualViewport.resize is unreliable on some Android browsers —
+      // it can fire late, drop, or only fire once mid-animation. Poll
+      // across the keyboard's open animation as a safety net.
+      for (const ms of [60, 180, 360, 600, 900]) {
+        pollTimers.push(setTimeout(update, ms));
+      }
+    };
+    const onFocusOut = () => {
+      for (const ms of [100, 300]) {
+        pollTimers.push(setTimeout(update, ms));
+      }
+    };
+
+    vv?.addEventListener('resize', scheduleUpdate);
+    vv?.addEventListener('scroll', scheduleUpdate);
+    document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('focusout', onFocusOut);
+    window.addEventListener('resize', scheduleUpdate);
+    window.addEventListener('orientationchange', scheduleUpdate);
     update();
+
     return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
+      if (raf) cancelAnimationFrame(raf);
+      pollTimers.forEach(clearTimeout);
+      vv?.removeEventListener('resize', scheduleUpdate);
+      vv?.removeEventListener('scroll', scheduleUpdate);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
+      window.removeEventListener('resize', scheduleUpdate);
+      window.removeEventListener('orientationchange', scheduleUpdate);
       root.style.removeProperty('--keyboard-inset');
       setKeyboardInset(0);
+      if (vk) {
+        // Restore default so other pages aren't surprised by our setting.
+        vk.overlaysContent = true;
+      }
     };
   }, []);
 

@@ -30,11 +30,16 @@ export const viewport: Viewport = {
   userScalable: false,
   viewportFit: 'cover',
   themeColor: '#f7f1e3',
-  // `interactive-widget=overlays-content` makes the on-screen keyboard overlay
-  // the page without resizing the layout viewport. The game shell stays at a
-  // fixed `100svh` height, and we manually translate just the chat input above
-  // the keyboard via the VisualViewport API — everything else stays put.
-  interactiveWidget: 'overlays-content',
+  // `resizes-content`: when the on-screen keyboard opens, the browser
+  // shrinks BOTH the layout viewport and the visual viewport. This means
+  // anything pinned to `position: fixed; bottom: 0` naturally sits above
+  // the keyboard with no JS tricks — the way WhatsApp / Messenger / every
+  // other messaging app gets it right.
+  //
+  // (Game.tsx also calls navigator.virtualKeyboard.overlaysContent = false
+  // on Chromium, which enforces this behavior even if the browser ignores
+  // the meta tag.)
+  interactiveWidget: 'resizes-content',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

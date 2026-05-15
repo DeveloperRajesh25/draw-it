@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { after } from 'next/server';
 import { nanoid } from 'nanoid';
 import { adminClient } from '@/lib/supabase/server';
 import { ChatBodySchema } from '@/lib/schemas';
@@ -28,12 +27,12 @@ export async function POST(
     // FAST PATH: Redis hot cache.
     //
     // When the round started we cached the word, drawer, deadlines, and
-    // guesser count in Upstash Redis. A guess can be verified in ~30-80ms
-    // total (one Redis GET + one atomic Lua claim) — vs the ~800-1200ms
-    // Supabase path below. All DB writes are pushed into `after()` so the
-    // guesser sees their green message immediately and the rest of the
-    // bookkeeping (chat insert, score update, round-end transition) runs
-    // out-of-band.
+    // guesser count in Upstash Redis. A guess is verified in ~30-80ms (one
+    // Redis GET + one atomic Lua claim) — vs the ~800-1200ms Supabase path
+    // below. The bookkeeping writes run inline so that when this is the
+    // last guesser, the round-end transition has landed before the client
+    // refetches; that prevents the "everyone guessed but the round keeps
+    // going until the timer" race that the deferred-write design had.
     // ----------------------------------------------------------------
     const turn = await getTurnCache(code);
     if (
@@ -52,26 +51,30 @@ export async function POST(
           totalGuessers: Math.max(1, turn.totalGuessers),
         });
 
-        // Best-effort hint to the client that this guess closed the round.
-        // The watchdog and broadcastStateRefresh in use-room/Chat handle the
-        // case where this estimate is wrong.
-        const roundEnded = guessOrder >= turn.totalGuessers;
+        try {
+          await persistCorrectGuess({
+            sb,
+            code,
+            senderId: body.playerId,
+            messageId,
+            word: turn.word,
+            guessOrder,
+            points: pts,
+          });
+        } catch (e) {
+          console.error('[chat] fast-path persist failed', e);
+        }
 
-        after(async () => {
-          try {
-            await persistCorrectGuess({
-              sb,
-              code,
-              senderId: body.playerId,
-              messageId,
-              word: turn.word,
-              guessOrder,
-              points: pts,
-            });
-          } catch (e) {
-            console.error('[chat] deferred fast-path persist failed', e);
-          }
-        });
+        // Re-read room phase so we report an accurate roundEnded flag —
+        // maybeEndDrawingEarly inside persistCorrectGuess may have just
+        // flipped the phase to round-end (e.g. when this was the last
+        // guesser, or when other guessers had already disconnected).
+        const { data: phaseRow } = await sb
+          .from('rooms')
+          .select('phase')
+          .eq('code', code)
+          .maybeSingle();
+        const roundEnded = phaseRow?.phase !== 'drawing';
 
         return NextResponse.json({
           ok: true,
@@ -116,27 +119,28 @@ export async function POST(
         // Re-checking the Redis claim catches the duplicate.
         const claim = await tryClaimGuess(code, room.round, room.turnInRound, sender.id);
         if (claim !== 0) {
-          // Defer everything so the guesser still sees fast green even when
-          // Redis is unavailable. Points/order/round-end are computed
-          // inside the deferred block — the client doesn't need them in
-          // the response.
-          after(async () => {
-            try {
-              await persistCorrectGuessSlowPath({
-                sb,
-                room,
-                sender,
-                messageId,
-                guessOrderHint: claim && claim > 0 ? claim : null,
-              });
-            } catch (e) {
-              console.error('[chat] deferred slow-path persist failed', e);
-            }
-          });
+          try {
+            await persistCorrectGuessSlowPath({
+              sb,
+              room,
+              sender,
+              messageId,
+              guessOrderHint: claim && claim > 0 ? claim : null,
+            });
+          } catch (e) {
+            console.error('[chat] slow-path persist failed', e);
+          }
+          const { data: phaseRow } = await sb
+            .from('rooms')
+            .select('phase')
+            .eq('code', code)
+            .maybeSingle();
+          const roundEnded = phaseRow?.phase !== 'drawing';
           return NextResponse.json({
             ok: true,
             correct: true,
             messageId,
+            roundEnded,
           });
         }
         // claim === 0 — already counted via fast path. Drop through and

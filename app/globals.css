@@ -150,18 +150,16 @@
     border-radius: 4px;
   }
 
-  /* Game shell — pinned to a fixed `100svh`, no scrolling. The on-screen
-     keyboard overlays the page (via `interactive-widget=overlays-content`),
-     so the shell height never changes when the keyboard opens. Only the
-     chat input translates above the keyboard, driven by --keyboard-inset. */
+  /* Game shell — sized to the dynamic viewport so it shrinks when the
+     on-screen keyboard opens (`interactive-widget=resizes-content` in
+     layout.tsx). Once the shell shrinks, anything inside (including the
+     `position: fixed; bottom: 0` chat input) is naturally above the
+     keyboard — same model WhatsApp / Messenger use. No JS positioning
+     tricks needed. svh is the fallback for browsers without dvh. */
   .game-shell {
     height: 100svh;
+    height: 100dvh;
     overflow: hidden;
-  }
-  @media (min-width: 640px) {
-    .game-shell {
-      height: 100dvh;
-    }
   }
 
   /* Chat input — translates above the on-screen keyboard. --keyboard-inset
@@ -174,11 +172,14 @@
 
   /* Canvas frame — width comes from the container; height is locked by the
      aspect ratio applied inside Canvas.tsx. On mobile we cap the height by
-     the small viewport unit so the canvas + chat fit on screen without
-     scrolling. */
+     the dynamic viewport unit so the canvas shrinks when the on-screen
+     keyboard opens (alongside game-shell), leaving room for the chat list
+     + players row. svh is the fallback for browsers without dvh. */
   .canvas-frame {
     max-height: 46svh;
+    max-height: 46dvh;
     max-width: calc(46svh * 4 / 3);
+    max-width: calc(46dvh * 4 / 3);
   }
   @media (min-width: 640px) {
     .canvas-frame {
